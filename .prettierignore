@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+package-lock.json
+docs
+
+chart/templates
+chart/dashboards

@@ -1,0 +1,432 @@
+{
+  "sources": [
+    {
+      "id": "cursor:changelog",
+      "competitor": "cursor",
+      "url": "https://www.cursor.com/changelog",
+      "type": "changelog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "cursor:pricing",
+      "competitor": "cursor",
+      "url": "https://www.cursor.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "windsurf:blog",
+      "competitor": "windsurf",
+      "url": "https://windsurf.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "windsurf:pricing",
+      "competitor": "windsurf",
+      "url": "https://windsurf.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "replit:blog",
+      "competitor": "replit",
+      "url": "https://blog.replit.com/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "replit:pricing",
+      "competitor": "replit",
+      "url": "https://replit.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "v0:changelog",
+      "competitor": "v0",
+      "url": "https://v0.dev/changelog",
+      "type": "changelog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "bolt:blog",
+      "competitor": "bolt",
+      "url": "https://bolt.new/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "lovable:blog",
+      "competitor": "lovable",
+      "url": "https://lovable.dev/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "lovable:pricing",
+      "competitor": "lovable",
+      "url": "https://lovable.dev/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "devin:blog",
+      "competitor": "devin",
+      "url": "https://www.cognition.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "tabnine:blog",
+      "competitor": "tabnine",
+      "url": "https://www.tabnine.com/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "tabnine:pricing",
+      "competitor": "tabnine",
+      "url": "https://www.tabnine.com/pricing/",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "cody:blog",
+      "competitor": "sourcegraph",
+      "url": "https://sourcegraph.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "cody:pricing",
+      "competitor": "sourcegraph",
+      "url": "https://sourcegraph.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "codeium:blog",
+      "competitor": "codeium",
+      "url": "https://codeium.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "codeium:pricing",
+      "competitor": "codeium",
+      "url": "https://codeium.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "midjourney:updates",
+      "competitor": "midjourney",
+      "url": "https://www.midjourney.com/updates",
+      "type": "changelog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "runway:blog",
+      "competitor": "runway",
+      "url": "https://runwayml.com/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "runway:pricing",
+      "competitor": "runway",
+      "url": "https://runwayml.com/pricing/",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "pika:blog",
+      "competitor": "pika",
+      "url": "https://pika.art/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "ideogram:blog",
+      "competitor": "ideogram",
+      "url": "https://ideogram.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "synthesia:blog",
+      "competitor": "synthesia",
+      "url": "https://www.synthesia.io/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "synthesia:pricing",
+      "competitor": "synthesia",
+      "url": "https://www.synthesia.io/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "elevenlabs:blog",
+      "competitor": "elevenlabs",
+      "url": "https://elevenlabs.io/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "elevenlabs:pricing",
+      "competitor": "elevenlabs",
+      "url": "https://elevenlabs.io/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "jasper:blog",
+      "competitor": "jasper",
+      "url": "https://www.jasper.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "jasper:pricing",
+      "competitor": "jasper",
+      "url": "https://www.jasper.ai/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "writer:blog",
+      "competitor": "writer",
+      "url": "https://writer.com/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "writer:pricing",
+      "competitor": "writer",
+      "url": "https://writer.com/pricing/",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "copy-ai:blog",
+      "competitor": "copy-ai",
+      "url": "https://www.copy.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "copy-ai:pricing",
+      "competitor": "copy-ai",
+      "url": "https://www.copy.ai/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "notion:releases",
+      "competitor": "notion",
+      "url": "https://www.notion.com/releases",
+      "type": "changelog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "notion:pricing",
+      "competitor": "notion",
+      "url": "https://www.notion.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "gamma:blog",
+      "competitor": "gamma",
+      "url": "https://gamma.app/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "otter:blog",
+      "competitor": "otter",
+      "url": "https://blog.otter.ai/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "otter:pricing",
+      "competitor": "otter",
+      "url": "https://otter.ai/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "granola:blog",
+      "competitor": "granola",
+      "url": "https://www.granola.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "glean:blog",
+      "competitor": "glean",
+      "url": "https://www.glean.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "hex:blog",
+      "competitor": "hex",
+      "url": "https://hex.tech/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "clay:blog",
+      "competitor": "clay",
+      "url": "https://www.clay.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "clay:pricing",
+      "competitor": "clay",
+      "url": "https://www.clay.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "gong:blog",
+      "competitor": "gong",
+      "url": "https://www.gong.io/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "intercom:blog",
+      "competitor": "intercom",
+      "url": "https://www.intercom.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "intercom:pricing",
+      "competitor": "intercom",
+      "url": "https://www.intercom.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "sierra:blog",
+      "competitor": "sierra",
+      "url": "https://sierra.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "harvey:blog",
+      "competitor": "harvey",
+      "url": "https://www.harvey.ai/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "abridge:blog",
+      "competitor": "abridge",
+      "url": "https://www.abridge.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "ironclad:blog",
+      "competitor": "ironclad",
+      "url": "https://ironcladapp.com/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "snyk:blog",
+      "competitor": "snyk",
+      "url": "https://snyk.io/blog/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "wiz:blog",
+      "competitor": "wiz",
+      "url": "https://www.wiz.io/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "canva:blog",
+      "competitor": "canva",
+      "url": "https://www.canva.com/designschool/",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "perplexity:blog",
+      "competitor": "perplexity",
+      "url": "https://www.perplexity.ai/hub",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "perplexity:pricing",
+      "competitor": "perplexity",
+      "url": "https://www.perplexity.ai/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+
+    {
+      "id": "replicate:blog",
+      "competitor": "replicate",
+      "url": "https://replicate.com/blog",
+      "type": "blog",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    },
+    {
+      "id": "replicate:pricing",
+      "competitor": "replicate",
+      "url": "https://replicate.com/pricing",
+      "type": "pricing",
+      "selectors": { "content": "main", "exclude": ["nav", "footer", "header"] }
+    }
+  ]
+}

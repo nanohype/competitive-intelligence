@@ -1,0 +1,12 @@
+{{- if .Values.grafanaDashboard.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "competitive-intelligence.fullname" . }}-dashboard
+  labels:
+    {{- include "competitive-intelligence.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  competitive-intelligence.json: |-
+    {{- .Files.Get "dashboards/competitive-intelligence.json" | nindent 4 }}
+{{- end }}

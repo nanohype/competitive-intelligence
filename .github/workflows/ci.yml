@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: build + lint + typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        # `npm install` instead of `npm ci`: the lockfile is generated on
+        # macOS and omits Linux platform-conditional optional deps that
+        # vitest/rolldown pull in. `npm install` resolves them on the Linux
+        # runner; version pinning comes from the lockfile regardless.
+        run: npm install --prefer-offline --no-audit --no-fund
+
+      - name: Audit (production deps, high+ severity)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        # OTEL_SDK_DISABLED short-circuits the OTel SDK so the test run never
+        # tries to reach the cluster collector. The metrics/tracing API
+        # degrades to a no-op without a registered provider.
+        run: npm test
+        env:
+          OTEL_SDK_DISABLED: "true"
+
+      - name: Build (emit dist)
+        run: npm run build
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Helm lint chart
+        run: helm lint chart
+
+      - name: Helm template (staging values)
+        run: helm template competitive-intelligence chart -f chart/values-staging.yaml > /dev/null
+
+      - name: Helm template (production values)
+        run: helm template competitive-intelligence chart -f chart/values-production.yaml > /dev/null
+
+  docker:
+    name: docker build (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t competitive-intelligence:ci .

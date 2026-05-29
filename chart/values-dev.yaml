@@ -1,0 +1,23 @@
+# Dev delta.
+image:
+  tag: dev
+
+replicaCount: 1
+
+externalSecret:
+  remoteRefSecret: competitive-intelligence/dev/app-secrets
+  dbCredentialsSecret: competitive-intelligence/dev/db-credentials
+
+env:
+  NODE_ENV: production
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=competitive-intelligence,service.version=0.1.0,deployment.environment=dev,agents.tenant=protohype,agents.platform=competitive-intelligence"
+
+aws:
+  # Fill from landing-zone `competitive-intelligence-platform` (dev) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-dev/us-west-2/dev/competitive-intelligence-platform output -raw irsa_role_arn`
+  platformRoleArn: ""
+
+tenantInfra:
+  # Fill the empties below from the landing-zone competitive-intelligence-platform
+  # dev outputs (terragrunt output -json). Slot names match output names 1:1.
+  pgHost: "" # aurora_cluster_endpoint

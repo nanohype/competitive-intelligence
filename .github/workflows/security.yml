@@ -1,0 +1,92 @@
+name: security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly Tuesday 06:00 UTC — catches new CVEs even when no PRs land.
+    - cron: "0 6 * * 2"
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The official gitleaks-action gates organization repos behind a paid
+      # license; the gitleaks CLI itself is free. Pin and run it directly.
+      - name: gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks git --config .gitleaks.toml --redact --no-banner .
+
+  trivy-config:
+    name: trivy (dockerfile misconfig)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          # Scoped to the Dockerfile — the one config artifact this repo owns
+          # and can remediate. The Helm chart is covered by the ci workflow's
+          # helm lint + template steps; platform.yaml (a Platform CR) and
+          # gitops/applicationset-entry.yaml (an ArgoCD ApplicationSet) are not
+          # standard workloads, so trivy's generic Kubernetes checks misfire on
+          # them rather than surfacing real findings.
+          scan-ref: Dockerfile
+          severity: HIGH,CRITICAL
+          # The gate is HIGH/CRITICAL only. Without this, trivy-action builds
+          # the SARIF with all severities and exits non-zero on any of them —
+          # so MEDIUM/LOW lint (e.g. dockerfile best-practice notes) would fail
+          # the build. This keeps the gate to HIGH/CRITICAL while still
+          # surfacing lower-severity findings in the SARIF for code-scanning.
+          limit-severities-for-sarif: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-config.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+  trivy-fs:
+    name: trivy (filesystem vuln scan — npm deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Dependency vulns only. Secret scanning is gitleaks' job (above) and
+          # misconfig is the trivy-config job's. ignore-unfixed keeps the gate
+          # to actionable (patch-available) CVEs.
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          # Gate on HIGH/CRITICAL only (see trivy-config note); lower-severity
+          # CVEs still upload to code-scanning as warnings.
+          limit-severities-for-sarif: true
+          exit-code: "1"
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-fs.sarif
+          skip-dirs: "node_modules"
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs

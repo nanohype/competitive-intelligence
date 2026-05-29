@@ -1,0 +1,187 @@
+{
+  "uid": "competitive-intelligence",
+  "title": "Competitive Intelligence",
+  "tags": ["protohype", "competitive-intelligence"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "Prometheus"
+        }
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "query": "label_values(competitive_intelligence_crawl_duration_ms_bucket, deployment_environment)",
+        "current": {
+          "text": "production",
+          "value": "production"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Crawl — duration p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(competitive_intelligence_crawl_duration_ms_bucket{deployment_environment=\"$environment\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(competitive_intelligence_crawl_duration_ms_bucket{deployment_environment=\"$environment\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(competitive_intelligence_crawl_duration_ms_bucket{deployment_environment=\"$environment\"}[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 2,
+      "title": "Crawl — sources by outcome",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(competitive_intelligence_crawl_sources_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "id": 3,
+      "title": "Pipeline — chunks vs diffs processed",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(competitive_intelligence_chunks_processed_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "chunks/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(competitive_intelligence_diffs_processed_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "diffs/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "id": 4,
+      "title": "Change score — p50 / p95",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(competitive_intelligence_change_score_bucket{deployment_environment=\"$environment\"}[15m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(competitive_intelligence_change_score_bucket{deployment_environment=\"$environment\"}[15m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "none", "min": 0, "max": 1}}
+    },
+    {
+      "id": 5,
+      "title": "Alerts — fired vs send failures",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(competitive_intelligence_alerts_fired_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "fired/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(competitive_intelligence_alert_send_failures_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "send failures/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}}}
+    },
+    {
+      "id": 6,
+      "title": "Bedrock — tokens per second (in / out)",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(competitive_intelligence_bedrock_input_tokens_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "input tokens/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(competitive_intelligence_bedrock_output_tokens_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "output tokens/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "id": 7,
+      "title": "Prompt cache — hit ratio",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(competitive_intelligence_bedrock_cache_read_tokens_total{deployment_environment=\"$environment\"}[5m])) / clamp_min(sum(rate(competitive_intelligence_bedrock_input_tokens_total{deployment_environment=\"$environment\"}[5m])), 1)",
+          "legendFormat": "cache-hit ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}}
+    },
+    {
+      "id": 8,
+      "title": "Resilience — circuit breakers open & pgvector errors",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "max by (target) (competitive_intelligence_circuit_breaker_open{deployment_environment=\"$environment\"})",
+          "legendFormat": "breaker open: {{target}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(competitive_intelligence_pgvector_errors_total{deployment_environment=\"$environment\"}[5m]))",
+          "legendFormat": "pgvector errors/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+    }
+  ]
+}

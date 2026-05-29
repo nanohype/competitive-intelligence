@@ -1,0 +1,33 @@
+# Production delta.
+image:
+  tag: production
+
+# Stays 1: single-writer scheduler + in-process crawl mutex. Scaling out would
+# run overlapping crawls and double-fire alerts. Lift only with leader election.
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+externalSecret:
+  remoteRefSecret: competitive-intelligence/production/app-secrets
+  dbCredentialsSecret: competitive-intelligence/production/db-credentials
+
+env:
+  NODE_ENV: production
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=competitive-intelligence,service.version=0.1.0,deployment.environment=production,agents.tenant=protohype,agents.platform=competitive-intelligence"
+
+aws:
+  # Fill from landing-zone `competitive-intelligence-platform` (production) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-prod/us-west-2/production/competitive-intelligence-platform output -raw irsa_role_arn`
+  platformRoleArn: ""
+
+tenantInfra:
+  # Fill the empties below from the landing-zone competitive-intelligence-platform
+  # production outputs (terragrunt output -json). Slot names match output names 1:1.
+  pgHost: "" # aurora_cluster_endpoint

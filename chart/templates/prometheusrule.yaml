@@ -1,0 +1,83 @@
+{{- if .Values.prometheusRule.enabled -}}
+# Alert rules for the competitive-intelligence radar. Metric names target the
+# OTel-exported metrics as they arrive in Mimir — the app emits via its OTel
+# metrics surface (counters + histograms over @opentelemetry/api), and the
+# cluster-level OTel Collector ships them to Mimir. The OTel service.name
+# `competitive-intelligence` becomes the `competitive_intelligence_*` metric
+# prefix after the OTLP→Prometheus naming convention is applied.
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "competitive-intelligence.fullname" . }}
+  labels:
+    {{- include "competitive-intelligence.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.selector }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: competitive-intelligence.crawl
+      interval: 1m
+      rules:
+        - alert: CompetitiveIntelligenceCrawlFailureSpike
+          expr: sum(rate(competitive_intelligence_crawl_failures_total[15m])) > 0.0033
+          for: 15m
+          labels:
+            severity: page
+            service: competitive-intelligence
+          annotations:
+            summary: competitive-intelligence crawl failures elevated for 15m
+            description: |
+              Crawl-failure rate is {{ "{{" }} $value | printf "%.4f" {{ "}}" }}/s (≥ 3 failures per 15 minutes).
+              Likely causes: a competitor site blocking the crawler, a per-host circuit breaker stuck open,
+              DNS/egress regression, or the NetworkPolicy denying outbound :443.
+
+        - alert: CompetitiveIntelligenceCircuitBreakerOpen
+          # A breaker that stays open means a host (crawl target, Bedrock, or
+          # Slack) is failing fast and not recovering — the radar is partially blind.
+          expr: max by (target) (competitive_intelligence_circuit_breaker_open) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: competitive-intelligence
+          annotations:
+            summary: competitive-intelligence circuit breaker open for {{ "{{" }} $labels.target {{ "}}" }}
+            description: |
+              The circuit breaker for {{ "{{" }} $labels.target {{ "}}" }} has been open for 10+ minutes —
+              calls are failing fast. Crawl coverage, LLM analysis, or alert delivery may be degraded.
+
+    - name: competitive-intelligence.alerts
+      interval: 1m
+      rules:
+        - alert: CompetitiveIntelligenceAlertSendFailure
+          expr: sum(rate(competitive_intelligence_alert_send_failures_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: page
+            service: competitive-intelligence
+          annotations:
+            summary: competitive-intelligence failing to post Slack alerts
+            description: |
+              Slack alert sends are failing ({{ "{{" }} $value | printf "%.4f" {{ "}}" }}/s). Detected changes
+              are being computed but not delivered to #competitive-intel. Check the Slack bot token,
+              channel membership, and the Slack egress path.
+
+    - name: competitive-intelligence.store
+      interval: 1m
+      rules:
+        - alert: CompetitiveIntelligencePgVectorUnreachable
+          # pgvector down → the differ can't read history → on recovery every chunk
+          # reads as new and the radar risks an alert flood. Page before that lands.
+          expr: sum(rate(competitive_intelligence_pgvector_errors_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: page
+            service: competitive-intelligence
+          annotations:
+            summary: competitive-intelligence cannot reach the pgvector store
+            description: |
+              pgvector errors observed ({{ "{{" }} $value | printf "%.4f" {{ "}}" }}/s). The semantic-diff
+              baseline is unavailable; crawls cannot persist or compare. Check the Aurora endpoint,
+              the PGUSER/PGPASSWORD ExternalSecret sync, and the :5432 egress rule.
+{{- end }}

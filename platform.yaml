@@ -1,0 +1,76 @@
+# Platform CR — declares competitive-intelligence as a tenant of the protohype
+# team on the eks-agent-platform operator. Apply once per cluster before the
+# ApplicationSet entry starts reconciling the chart.
+#
+# Two CRs declared here:
+#   - BudgetPolicy (referenced by Platform.spec.budget — required)
+#   - Platform     (the actual tenant declaration)
+#
+# What the operator reconciles from the Platform CR:
+#   - Namespace `tenants-protohype` (Pod Security Standards baseline)
+#   - ResourceQuota + LimitRange
+#   - Default-deny NetworkPolicy (the chart layers app-specific rules on top)
+#   - ArgoCD AppProject scoped to this Platform
+#   - Per-Platform IRSA role with baseline policy + spec.identity.extraPolicyArns
+#     attached. Trust policy permits the `tenant-runtime` ServiceAccount in the
+#     tenant namespace
+#
+# What this chart owns separately (NOT operator-reconciled):
+#   - The chart's own ServiceAccount (`competitive-intelligence`). Its
+#     `eks.amazonaws.com/role-arn` annotation comes from landing-zone's
+#     competitive-intelligence-platform component (output: irsa_role_arn) via
+#     per-env Helm values (aws.platformRoleArn). The operator's
+#     `<env>-competitive-intelligence-tenant` role trusts the `tenant-runtime`
+#     SA, not this app's SA — two roles, two trusts, two workload classes
+#     (AgentFleet pods vs the radar's worker pod)
+#
+# Tenant substrate (Aurora pgvector, Bedrock invoke policy, Secrets Manager
+# seeding) lives in landing-zone's components/aws/competitive-intelligence-platform/.
+# Once that component's per-env entry applies, its outputs wire into the chart's
+# per-env values (`tenantInfra.*` + `aws.platformRoleArn`).
+
+---
+apiVersion: agents.stxkxs.io/v1alpha1
+kind: BudgetPolicy
+metadata:
+  name: competitive-intelligence
+  namespace: tenants-protohype
+spec:
+  platformRef:
+    name: competitive-intelligence
+  # Sized for Bedrock spend: Claude Sonnet (Converse) on every above-threshold
+  # diff + Titan embeddings on every chunk, every crawl. No per-query user
+  # fan-out — spend is bounded by crawl interval × source count. Kill-switch
+  # fires at 120% (USD 3000) when killSwitchEnabled is true.
+  monthlyUsd: "2500"
+  alertThresholdsPercent: [50, 80, 100]
+  killSwitchEnabled: true
+---
+apiVersion: agents.stxkxs.io/v1alpha1
+kind: Platform
+metadata:
+  name: competitive-intelligence
+  namespace: tenants-protohype
+spec:
+  displayName: competitive-intelligence
+  # Competitive intel is a marketing/strategy function.
+  persona: marketing
+  tenant: protohype
+  budget:
+    name: competitive-intelligence
+  identity:
+    # Bedrock model access — Claude (anthropic) for analysis/query, Titan
+    # (amazon) for embeddings. The radar's worker pod assumes the
+    # landing-zone-owned competitive-intelligence-platform IRSA role directly
+    # (via aws.platformRoleArn in the chart); the operator's role here exists
+    # for AgentFleet workloads in this namespace if/when they land.
+    allowedModelFamilies:
+      - anthropic
+      - amazon
+    # Additional managed policies the operator attaches on top of the per-tenant
+    # baseline. Empty — the app pod assumes the landing-zone role directly and
+    # needs nothing extra from the operator role.
+    extraPolicyArns: []
+  compliance:
+    soc2: true
+  isolation: namespace

@@ -1,0 +1,59 @@
+# gitleaks configuration for competitive-intelligence.
+#
+# Strategy: extend the default ruleset, then allowlist only the placeholder
+# strings we intentionally commit. Suppression is path- and stopword-scoped,
+# never a bare filename glob that could swallow a real secret file. Real
+# `.env` / credential files are gitignored and never committed; only the
+# committed `.env.example` (placeholders) is allowlisted, by exact path.
+# `sources.example.json` holds competitor URLs, not secrets — it needs no
+# allowlist.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Committed placeholder + example strings only"
+paths = [
+  # The committed env template — placeholders only, no real secrets. Anchored
+  # to the exact repo-root path so it never matches a real `.env*` file.
+  '''^\.env\.example$''',
+]
+regexes = [
+  # `replace-me` / `replace_me` / `replace-with-...` placeholders used across
+  # the env template and docs (Slack xoxb-/xapp-, provider keys, secrets).
+  '''(?i)replace[-_](me|with|[a-z0-9-]+)''',
+  # Angle-bracket placeholders in the env template + docs, e.g. <slack-bot-token>.
+  '''<[a-z][a-z0-9-]*>''',
+  # Truncated-token doc placeholders, e.g. `xoxb-...`, `sk-...` (these caught
+  # doc placeholders in a sibling repo's secret-shape docs).
+  '''[a-z]{2,5}[_-]\.\.\.''',
+  # Example ARNs in docs/prose (zeroed or example account IDs)
+  '''arn:aws:[a-z0-9-]+:[a-z0-9-]*:(000000000000|123456789012):[a-z0-9/_:-]+''',
+]
+stopwords = [
+  "replace-me",
+  "replace_me",
+  "replace-with",
+]
+
+# Custom rule: AWS account IDs in IAM ARN context. Bare 12-digit matching
+# flags Unix timestamps and port sequences (high false-positive rate);
+# narrowed to require the IAM ARN prefix so we only flag plausible account
+# IDs rather than every dozen-digit number.
+[[rules]]
+id = "aws-account-id-in-arn"
+description = "12-digit AWS account ID embedded in an IAM ARN"
+regex = '''arn:aws:[a-z0-9-]*:[a-z0-9-]*:([0-9]{12}):'''
+keywords = ["arn:aws"]
+[[rules.allowlists]]
+description = "Allow zeroed (mock) + example account IDs in docs"
+regexes = [
+  '''000000000000''',
+  '''123456789012''',
+  '''REPLACE''',
+]
+paths = [
+  '''docs/.*\.md$''',
+  '''README\.md$''',
+  '''chart/.*''',
+]

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "competitive-intelligence.fullname" . }}
+  labels:
+    {{- include "competitive-intelligence.labels" . | nindent 4 }}
+spec:
+  # ClusterIP only — exposes the health port for in-cluster probes. There is no
+  # public ingress; the Slack transport is Socket Mode (outbound WebSocket).
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "competitive-intelligence.selectorLabels" . | nindent 4 }}

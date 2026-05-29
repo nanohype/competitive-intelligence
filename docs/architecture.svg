@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 540" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <style>
+      .bg { fill: #0D1117; }
+      .card { fill: #161B22; stroke: #30363D; stroke-width: 1; rx: 8; }
+      .card-hi { fill: #161B22; stroke: #34D399; stroke-width: 1.5; rx: 8; }
+      .card-blue { fill: #161B22; stroke: #58A6FF; stroke-width: 1.5; rx: 8; }
+      .card-purple { fill: #161B22; stroke: #D2A8FF; stroke-width: 1.5; rx: 8; }
+      .card-orange { fill: #161B22; stroke: #FFA657; stroke-width: 1.5; rx: 8; }
+      .title { fill: #E6EDF3; font-size: 13px; font-weight: 600; }
+      .sub { fill: #8B949E; font-size: 10px; }
+      .tmpl { fill: #30363D; font-size: 8px; font-style: italic; }
+      .label { fill: #34D399; font-size: 9px; font-weight: 600; letter-spacing: 0.08em; }
+      .heading { fill: #E6EDF3; font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+      .dim { fill: #8B949E; font-size: 11px; }
+      .sec { fill: #34D399; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; }
+      .cmd { fill: #8B949E; font-size: 9px; font-family: 'SF Mono', 'Fira Code', monospace; }
+      .dot { fill: #34D399; }
+      .arrow { stroke: #30363D; stroke-width: 1; fill: none; }
+      .arrow-head { fill: #30363D; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="540"/>
+
+  <!-- Header -->
+  <text class="heading" x="40" y="36">sigint — Competitive Intelligence Radar</text>
+  <text class="dim" x="40" y="52">Crawl competitor websites · semantic diff · LLM analysis · Slack alerts</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- LEFT PANEL: Data Flow                               -->
+  <!-- ═══════════════════════════════════════════════════ -->
+
+  <!-- INGEST -->
+  <text class="sec" x="40" y="82">INGEST</text>
+
+  <rect class="card-hi" x="40" y="90" width="160" height="52"/>
+  <text class="title" x="52" y="108">sources.json</text>
+  <text class="sub" x="52" y="122">55 AI SaaS competitor URLs</text>
+  <text class="tmpl" x="52" y="136">Zod-validated on load</text>
+
+  <line class="arrow" x1="200" y1="116" x2="222" y2="116"/>
+  <polygon class="arrow-head" points="222,113 228,116 222,119"/>
+
+  <rect class="card" x="230" y="90" width="140" height="52"/>
+  <text class="title" x="242" y="108">Scheduler</text>
+  <text class="sub" x="242" y="122">fixed interval · mutex</text>
+  <text class="tmpl" x="242" y="136">← worker-service</text>
+
+  <line class="arrow" x1="370" y1="116" x2="392" y2="116"/>
+  <polygon class="arrow-head" points="392,113 398,116 392,119"/>
+
+  <rect class="card" x="400" y="90" width="180" height="52"/>
+  <text class="title" x="412" y="108">Crawler</text>
+  <text class="sub" x="412" y="122">fetch · parse · per-host breaker</text>
+  <text class="tmpl" x="412" y="136">← worker-service</text>
+
+  <!-- Arrow down from Crawler to Pipeline -->
+  <line class="arrow" x1="490" y1="142" x2="490" y2="164"/>
+  <polygon class="arrow-head" points="487,164 493,164 490,170"/>
+
+  <!-- PROCESS -->
+  <text class="sec" x="40" y="186">PROCESS</text>
+
+  <rect class="card-purple" x="40" y="194" width="300" height="52"/>
+  <text class="title" x="52" y="212">Pipeline</text>
+  <text class="sub" x="52" y="226">chunk → embed → semantic diff → store</text>
+  <text class="tmpl" x="52" y="240">← data-pipeline</text>
+
+  <line class="arrow" x1="340" y1="220" x2="392" y2="220"/>
+  <polygon class="arrow-head" points="392,217 398,220 392,223"/>
+
+  <rect class="card-hi" x="400" y="194" width="180" height="52"/>
+  <text class="title" x="412" y="212">Vector Store</text>
+  <text class="sub" x="412" y="226">in-memory · cosine search</text>
+  <text class="tmpl" x="412" y="240">← module-vector-store</text>
+
+  <!-- Arrow down from Pipeline to Alert Engine -->
+  <line class="arrow" x1="190" y1="246" x2="190" y2="274"/>
+  <polygon class="arrow-head" points="187,274 193,274 190,280"/>
+  <text x="118" y="268" fill="#FFA657" font-size="8" font-weight="500">significant changes</text>
+
+  <!-- Arrow down from Vector Store to Intel Engine -->
+  <line class="arrow" x1="490" y1="246" x2="490" y2="274"/>
+  <polygon class="arrow-head" points="487,274 493,274 490,280"/>
+  <text x="500" y="268" fill="#58A6FF" font-size="8" font-weight="500">retrieve</text>
+
+  <!-- ANALYZE -->
+  <text class="sec" x="40" y="296">ANALYZE</text>
+
+  <rect class="card-orange" x="40" y="304" width="240" height="52"/>
+  <text class="title" x="52" y="322">Alert Engine</text>
+  <text class="sub" x="52" y="336">LLM significance · signal extraction</text>
+  <text class="tmpl" x="52" y="350">← module-notifications</text>
+
+  <rect class="card-blue" x="400" y="304" width="180" height="52"/>
+  <text class="title" x="412" y="322">Intel Engine</text>
+  <text class="sub" x="412" y="336">retrieve · LLM-powered answers</text>
+  <text class="tmpl" x="412" y="350">← rag-pipeline</text>
+
+  <!-- Arrow down from Alert Engine to Slack Bot -->
+  <line class="arrow" x1="160" y1="356" x2="160" y2="384"/>
+  <polygon class="arrow-head" points="157,384 163,384 160,390"/>
+
+  <!-- Arrow down from Intel Engine to Slack Bot (diagonal left) -->
+  <path class="arrow" d="M 445 356 L 445 370 L 380 370 L 380 384"/>
+  <polygon class="arrow-head" points="377,384 383,384 380,390"/>
+  <text x="395" y="380" fill="#58A6FF" font-size="8" font-weight="500">answers</text>
+
+  <!-- Arrow down from Intel Engine to CLI -->
+  <line class="arrow" x1="530" y1="356" x2="530" y2="384"/>
+  <polygon class="arrow-head" points="527,384 533,384 530,390"/>
+
+  <!-- INTERFACE -->
+  <text class="sec" x="40" y="408">INTERFACE</text>
+
+  <rect class="card-blue" x="40" y="416" width="340" height="52"/>
+  <text class="title" x="52" y="434">Slack Bot</text>
+  <text class="sub" x="52" y="448">alerts · @mention queries · /sigint commands · DMs</text>
+  <text class="tmpl" x="52" y="462">← slack-bot</text>
+
+  <rect class="card" x="400" y="416" width="180" height="52"/>
+  <text class="title" x="412" y="434">CLI</text>
+  <text class="sub" x="412" y="448">npm run crawl · npm run query</text>
+  <text class="tmpl" x="412" y="462">colored terminal UI</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- RIGHT PANEL: Powered By                             -->
+  <!-- ═══════════════════════════════════════════════════ -->
+
+  <rect class="card" x="640" y="78" width="530" height="200" rx="12"/>
+  <text class="sec" x="660" y="100">POWERED BY AWS BEDROCK</text>
+
+  <rect x="660" y="110" width="240" height="44" rx="6" fill="#1C2333" stroke="#34D399" stroke-width="1" opacity="0.8"/>
+  <text class="label" x="676" y="126">LLM</text>
+  <text class="sub" x="676" y="142">Claude Sonnet via Converse API</text>
+
+  <rect x="910" y="110" width="240" height="44" rx="6" fill="#1C2333" stroke="#34D399" stroke-width="1" opacity="0.8"/>
+  <text class="label" x="926" y="126">EMBEDDINGS</text>
+  <text class="sub" x="926" y="142">Titan v2 · 1024 dimensions</text>
+
+  <rect x="660" y="164" width="490" height="44" rx="6" fill="#1C2333" stroke="#30363D" stroke-width="1"/>
+  <text x="676" y="180" fill="#FFA657" font-size="9" font-weight="600" letter-spacing="0.1em">AUTHENTICATION</text>
+  <text class="sub" x="676" y="196">AWS credential chain — SSO, env vars, ~/.aws/credentials, IAM roles</text>
+
+  <rect x="660" y="218" width="490" height="48" rx="6" fill="#1C2333" stroke="#30363D" stroke-width="1"/>
+  <text x="676" y="234" fill="#8B949E" font-size="9" font-weight="600" letter-spacing="0.1em">NO API KEYS NEEDED</text>
+  <text class="sub" x="676" y="250">Just run: aws sts get-caller-identity</text>
+
+
+  <!-- ─── Template Lineage ─── -->
+  <rect class="card" x="640" y="296" width="530" height="96" rx="12"/>
+  <text class="sec" x="660" y="318">NANOHYPE TEMPLATE LINEAGE</text>
+
+  <rect x="660" y="328" width="120" height="24" rx="4" fill="#1C2333" stroke="#34D399" stroke-width="1" opacity="0.6"/>
+  <text class="sub" x="672" y="344">worker-service</text>
+
+  <rect x="790" y="328" width="110" height="24" rx="4" fill="#1C2333" stroke="#D2A8FF" stroke-width="1" opacity="0.6"/>
+  <text class="sub" x="802" y="344">data-pipeline</text>
+
+  <rect x="910" y="328" width="100" height="24" rx="4" fill="#1C2333" stroke="#58A6FF" stroke-width="1" opacity="0.6"/>
+  <text class="sub" x="922" y="344">rag-pipeline</text>
+
+  <rect x="660" y="360" width="140" height="24" rx="4" fill="#1C2333" stroke="#34D399" stroke-width="1" opacity="0.6"/>
+  <text class="sub" x="672" y="376">module-vector-store</text>
+
+  <rect x="810" y="360" width="150" height="24" rx="4" fill="#1C2333" stroke="#FFA657" stroke-width="1" opacity="0.6"/>
+  <text class="sub" x="822" y="376">module-notifications</text>
+
+  <rect x="970" y="360" width="80" height="24" rx="4" fill="#1C2333" stroke="#58A6FF" stroke-width="1" opacity="0.6"/>
+  <text class="sub" x="982" y="376">slack-bot</text>
+
+  <!-- ─── Tech Stack ─── -->
+  <rect class="card" x="640" y="410" width="530" height="60" rx="12"/>
+  <text class="sec" x="660" y="432">TECH STACK</text>
+  <text class="sub" x="660" y="448">TypeScript · ESM · Node ≥ 22 · Zod · cheerio · @slack/bolt</text>
+  <text class="sub" x="660" y="462">provider registry pattern · per-host circuit breakers · cosine similarity</text>
+
+  <!-- ─── Footer ─── -->
+  <text class="dim" x="40" y="500">protohype/sigint — a nanohype protohype project</text>
+  <text class="cmd" x="40" y="516">cp .env.example .env &amp;&amp; cp sources.example.json sources.json &amp;&amp; npm run crawl</text>
+
+</svg>

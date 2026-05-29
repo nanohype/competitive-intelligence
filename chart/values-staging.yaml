@@ -1,0 +1,23 @@
+# Staging delta.
+image:
+  tag: staging
+
+replicaCount: 1
+
+externalSecret:
+  remoteRefSecret: competitive-intelligence/staging/app-secrets
+  dbCredentialsSecret: competitive-intelligence/staging/db-credentials
+
+env:
+  NODE_ENV: production
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=competitive-intelligence,service.version=0.1.0,deployment.environment=staging,agents.tenant=protohype,agents.platform=competitive-intelligence"
+
+aws:
+  # Fill from landing-zone `competitive-intelligence-platform` (staging) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-staging/us-west-2/staging/competitive-intelligence-platform output -raw irsa_role_arn`
+  platformRoleArn: ""
+
+tenantInfra:
+  # Fill the empties below from the landing-zone competitive-intelligence-platform
+  # staging outputs (terragrunt output -json). Slot names match output names 1:1.
+  pgHost: "" # aurora_cluster_endpoint

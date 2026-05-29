@@ -1,0 +1,101 @@
+version: "3"
+
+vars:
+  IMAGE: '{{.IMAGE | default "competitive-intelligence:dev"}}'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # === Composite ===
+
+  ci:
+    desc: "Full local CI: install, build, lint, typecheck, format:check, test, helm lint/template, docker build"
+    cmds:
+      - task: install
+      - task: build
+      - task: lint
+      - task: typecheck
+      - task: format:check
+      - task: test
+      - task: helm:lint
+      - task: helm:template
+      - task: docker:build
+
+  # === Install ===
+
+  install:
+    desc: Install app deps
+    cmds:
+      # `npm install` not `npm ci`: the macOS-generated lockfile omits the
+      # Linux platform-specific optional deps (vitest/rolldown); npm install
+      # resolves them on whatever host runs this, pinned by the lockfile.
+      - npm install --prefer-offline --no-audit --no-fund
+
+  # === TypeScript ===
+
+  build:
+    desc: Compile the app (tsc → dist/)
+    cmds:
+      - npm run build
+
+  lint:
+    desc: ESLint
+    cmds:
+      - npm run lint
+
+  typecheck:
+    desc: tsc --noEmit
+    cmds:
+      - npm run typecheck
+
+  format:check:
+    desc: Prettier --check
+    cmds:
+      - npm run format:check
+
+  test:
+    desc: Run the test suite
+    cmds:
+      - npm test
+
+  # === Helm ===
+
+  helm:lint:
+    desc: Lint the chart
+    cmds:
+      - helm lint chart
+
+  helm:template:
+    desc: Render the chart against dev + staging + production values
+    cmds:
+      - helm template chart -f chart/values.yaml -f chart/values-dev.yaml > /dev/null
+      - helm template chart -f chart/values.yaml -f chart/values-staging.yaml > /dev/null
+      - helm template chart -f chart/values.yaml -f chart/values-production.yaml > /dev/null
+
+  # === Docker ===
+
+  docker:build:
+    desc: "Build the container image (no push)"
+    cmds:
+      - docker build -t {{.IMAGE}} .
+
+  # === Security ===
+
+  security:scan:
+    desc: "Run security scanners (gitleaks + trivy config) if available locally"
+    cmds:
+      - |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks git --config .gitleaks.toml --redact --no-banner .
+        else
+          echo "gitleaks not installed — install via 'brew install gitleaks' to run locally"
+        fi
+      - |
+        if command -v trivy >/dev/null 2>&1; then
+          trivy config . --severity HIGH,CRITICAL --skip-dirs chart --exit-code 1
+        else
+          echo "trivy not installed — install via 'brew install trivy' to run locally"
+        fi

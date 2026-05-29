@@ -1,0 +1,51 @@
+# competitive-intelligence ApplicationSet entry — register into nanohype/eks-gitops
+# at applicationsets/apps-tenants.yaml (create if it doesn't exist yet).
+# Matrix generator: clusters × this list, so the same entry deploys to every
+# cluster labeled with the right environment.
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenant-competitive-intelligence
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  argocd.argoproj.io/secret-type: cluster
+          - list:
+              elements:
+                - name: competitive-intelligence
+                  path: chart
+                  syncWave: "100"
+  template:
+    metadata:
+      name: 'competitive-intelligence-{{ index .metadata.labels "environment" }}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{`{{syncWave}}`}}"
+    spec:
+      project: tenant-protohype
+      sources:
+        - repoURL: https://github.com/nanohype/competitive-intelligence.git
+          targetRevision: main
+          path: "{{`{{path}}`}}"
+          helm:
+            valueFiles:
+              - $values/{{`{{path}}`}}/values.yaml
+              - $values/{{`{{path}}`}}/values-{{ index .metadata.labels "environment" }}.yaml
+        - repoURL: https://github.com/nanohype/competitive-intelligence.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: "{{`{{server}}`}}"
+        namespace: tenants-protohype
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false # Platform reconciler owns the Namespace
+          - ServerSideApply=true

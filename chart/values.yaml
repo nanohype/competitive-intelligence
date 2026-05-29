@@ -1,0 +1,195 @@
+# Base values for competitive-intelligence (all environments). Per-env deltas
+# in values-{dev,staging,production}.yaml.
+
+image:
+  repository: ghcr.io/nanohype/competitive-intelligence
+  tag: "" # pinned per-env
+  pullPolicy: IfNotPresent
+
+# Single long-lived worker: scheduler + Slack Socket Mode + crawler. The
+# scheduler runs one global crawl on an interval and an in-process crawl mutex
+# prevents overlapping runs — both assume a single writer. Do NOT scale
+# horizontally without leader election; there is no HPA on this Deployment.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  # Health port. The app serves /health + /readyz here (config.port, env PORT).
+  port: 3000
+  targetPort: 3000
+
+serviceAccount:
+  create: true
+  # Free-form additional annotations merged into the ServiceAccount. The
+  # eks.amazonaws.com/role-arn annotation is rendered separately from
+  # aws.platformRoleArn so per-env role swaps don't trample this map.
+  annotations: {}
+
+aws:
+  # ARN of the IRSA role the pods assume. Comes from landing-zone's
+  # competitive-intelligence-platform component (output: irsa_role_arn). Empty
+  # at the chart level — per-env values plumb in the actual ARN. Empty value
+  # omits the eks.amazonaws.com/role-arn annotation entirely (useful for local
+  # helm-template / kind smoke runs where no real IAM role exists).
+  platformRoleArn: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /readyz
+      port: 3000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+externalSecret:
+  enabled: true
+  # ClusterSecretStore name (provisioned by eks-gitops external-secrets addon)
+  secretStore: aws-secrets-manager
+  refreshInterval: 1h
+  # App secrets in AWS Secrets Manager — composed per-env as
+  # competitive-intelligence/<env>/app-secrets. Slack tokens + optional
+  # provider keys live here.
+  remoteRefSecret: "" # set per-env (competitive-intelligence/<env>/app-secrets)
+  # Aurora master credentials secret name (provisioned by the landing-zone
+  # competitive-intelligence-platform component).
+  dbCredentialsSecret: "" # set per-env (competitive-intelligence/<env>/db-credentials)
+
+prometheusRule:
+  # Ships the rules to Mimir via the kube-prometheus-stack PrometheusRule CR.
+  # Set `enabled: false` if your cluster doesn't run kube-prometheus-stack.
+  enabled: true
+  selector:
+    release: kube-prometheus-stack
+
+grafanaDashboard:
+  # Uses the grafana_dashboard sidecar pattern — Grafana auto-imports any
+  # ConfigMap with `grafana_dashboard: "1"` label.
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  # Ingress: same-namespace only (kubelet/probe traffic from the node lands as
+  # same-namespace; no public ingress). The Slack transport is Socket Mode — an
+  # outbound WebSocket — so there is no inbound HTTP product surface.
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # HTTPS to the open internet — the crawler hits arbitrary competitor sites,
+    # plus Bedrock and Slack. 169.254.0.0/16 is excluded so pods can never reach
+    # the IMDS endpoint (SSRF / credential-exfil guard; IRSA is the only path to
+    # AWS creds).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16 # IMDS — must NOT be reachable from pods
+      ports:
+        - protocol: TCP
+          port: 443
+    # Postgres (Aurora pgvector via the landing-zone component) — endpoint
+    # resolved via DNS; egress restricted to the cluster VPC CIDR. Replace
+    # 10.0.0.0/8 with the actual VPC CIDR via per-env overrides if tightening
+    # is required.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+
+env:
+  # Non-secret configuration. Secrets (Slack tokens, optional provider keys,
+  # PGUSER/PGPASSWORD) come through the ExternalSecret.
+  AWS_REGION: us-west-2
+  LLM_PROVIDER: bedrock
+  EMBEDDING_PROVIDER: bedrock
+  # Sonnet default tier per llm-policy. Verify model availability in region
+  # before promoting — cross-region inference profiles differ by region.
+  BEDROCK_LLM_MODEL: anthropic.claude-sonnet-4-6
+  BEDROCK_EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
+  EMBEDDING_DIMENSIONS: "1024"
+  # Durable vector store — survives restarts so the first post-restart crawl
+  # diffs against real history instead of re-flooding alerts. Backed by the
+  # landing-zone competitive-intelligence-platform Aurora pgvector cluster.
+  VECTOR_PROVIDER: pgvector
+  CRAWL_INTERVAL_MINUTES: "60"
+  SIGNIFICANCE_THRESHOLD: "0.3"
+  # User-facing Slack surface — kept topical (owner-approved). Alerts post here.
+  SLACK_ALERT_CHANNEL: "#competitive-intel"
+  USER_AGENT: competitive-intelligence/0.1.0
+  PORT: "3000"
+  NODE_ENV: production
+  # OTel — exports to the cluster-level Collector (otel-collector.observability.svc)
+  # provisioned by eks-gitops. No per-pod sidecar.
+  OTEL_SERVICE_NAME: competitive-intelligence
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc.cluster.local:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_TRACES_SAMPLER: always_on
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_METRIC_EXPORT_INTERVAL: "60000"
+  # Resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT.
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=protohype,agents.platform=competitive-intelligence"
+
+# Per-tenant infrastructure references — populated by per-env values from the
+# landing-zone competitive-intelligence-platform component's outputs. Empty at
+# the chart level for local dev (where the vector store may run in `memory`
+# mode against a kind-side stub).
+tenantInfra:
+  # Aurora Serverless v2 (pgvector) endpoint — competitive-intelligence-platform:
+  # module.aurora.cluster_endpoint (output: aurora_cluster_endpoint).
+  pgHost: ""
+  # competitive-intelligence-platform output: aurora_cluster_port.
+  pgPort: "5432"
+  # competitive-intelligence-platform: database_name.
+  pgDatabase: competitive_intelligence
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

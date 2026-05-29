@@ -1,0 +1,22 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "competitive-intelligence.fullname" . }}
+  labels:
+    {{- include "competitive-intelligence.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "competitive-intelligence.selectorLabels" . | nindent 6 }}
+  # Default-deny posture: declaring both policy types with an explicit allow-list
+  # drops everything not matched below. The Platform reconciler also lays down a
+  # namespace-wide default-deny; this layers the app-specific rules on top.
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- toYaml .Values.networkPolicy.ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.networkPolicy.egress | nindent 4 }}
+{{- end }}
