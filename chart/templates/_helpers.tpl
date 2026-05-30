@@ -20,8 +20,8 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 {{ include "competitive-intelligence.selectorLabels" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-agents.stxkxs.io/tenant: protohype
-agents.stxkxs.io/platform: competitive-intelligence
+agents.nanohype.dev/tenant: protohype
+agents.nanohype.dev/platform: competitive-intelligence
 {{- end -}}
 
 {{- define "competitive-intelligence.selectorLabels" -}}
