@@ -30,7 +30,7 @@
 # per-env values (`tenantInfra.*` + `aws.platformRoleArn`).
 
 ---
-apiVersion: agents.stxkxs.io/v1alpha1
+apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
   name: competitive-intelligence
@@ -46,7 +46,7 @@ spec:
   alertThresholdsPercent: [50, 80, 100]
   killSwitchEnabled: true
 ---
-apiVersion: agents.stxkxs.io/v1alpha1
+apiVersion: platform.nanohype.dev/v1alpha1
 kind: Platform
 metadata:
   name: competitive-intelligence
