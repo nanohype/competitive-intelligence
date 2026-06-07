@@ -9,9 +9,9 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ include "competitive-intelligence.fullname" . }}
+  name: {{ include "tenant-chart-base.fullname" . }}
   labels:
-    {{- include "competitive-intelligence.labels" . | nindent 4 }}
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
     {{- with .Values.prometheusRule.selector }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

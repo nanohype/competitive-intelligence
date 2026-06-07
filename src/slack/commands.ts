@@ -3,18 +3,18 @@ import type { IntelEngine } from "../intel/index.js";
 import { logger } from "../logger.js";
 
 /**
- * Register /sigint slash commands.
+ * Register /competitive-intelligence slash commands.
  *
- * /sigint query <question>  — Ask a competitive intelligence question
- * /sigint crawl              — Trigger an immediate crawl
- * /sigint status             — Show system status
+ * /competitive-intelligence query <question>  — Ask a competitive intelligence question
+ * /competitive-intelligence crawl              — Trigger an immediate crawl
+ * /competitive-intelligence status             — Show system status
  */
 export function registerCommands(
   app: App,
   intel: IntelEngine,
   runCrawl: () => Promise<void>,
 ): void {
-  app.command("/sigint", async ({ command, ack, respond }) => {
+  app.command("/competitive-intelligence", async ({ command, ack, respond }) => {
     await ack();
 
     const args = command.text.trim();
@@ -25,7 +25,7 @@ export function registerCommands(
       case "query":
       case "ask": {
         if (!body) {
-          await respond("Usage: `/sigint query <your question>`");
+          await respond("Usage: `/competitive-intelligence query <your question>`");
           return;
         }
 
@@ -63,7 +63,7 @@ export function registerCommands(
         await respond({
           response_type: "ephemeral",
           text: [
-            `:satellite_antenna: *sigint status*`,
+            `:satellite_antenna: *competitive-intelligence status*`,
             `• Uptime: ${formatUptime(process.uptime())}`,
             `• Memory: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
             `• Node: ${process.version}`,
@@ -76,10 +76,10 @@ export function registerCommands(
         await respond({
           response_type: "ephemeral",
           text: [
-            "*sigint commands:*",
-            "`/sigint query <question>` — Ask about competitors",
-            "`/sigint crawl` — Trigger immediate crawl",
-            "`/sigint status` — System status",
+            "*competitive-intelligence commands:*",
+            "`/competitive-intelligence query <question>` — Ask about competitors",
+            "`/competitive-intelligence crawl` — Trigger immediate crawl",
+            "`/competitive-intelligence status` — System status",
           ].join("\n"),
         });
       }

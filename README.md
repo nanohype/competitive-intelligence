@@ -9,11 +9,11 @@ A competitive-intelligence radar. It crawls competitor websites on an interval, 
 
 **AI clients / agents start here:** [`AGENTS.md`](AGENTS.md). For the stack-wide view, see the [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md).
 
-> The internal Slack surface keeps its own names: the slash command is `/sigint` and the default alert channel is `#competitive-intel` — those are what users type and watch, so they don't rename with the repo.
+> The Slack slash command is `/competitive-intelligence`; the default alert channel is `#competitive-intel` (a short handle the team watches).
 
 ## What it is
 
-A radar that watches competitor marketing, docs, and pricing pages and tells you when something actually changed. The trick is the diff: each page is chunked and embedded, and a chunk only counts as "new" when its cosine similarity to the best stored match for that source falls below 0.85. A reworded paragraph or a reordered nav doesn't fire; a new enterprise tier or a deprecated API does. Above-threshold changes get an LLM analysis and a Slack alert; the accumulated history answers ad-hoc questions (`/sigint query …`).
+A radar that watches competitor marketing, docs, and pricing pages and tells you when something actually changed. The trick is the diff: each page is chunked and embedded, and a chunk only counts as "new" when its cosine similarity to the best stored match for that source falls below 0.85. A reworded paragraph or a reordered nav doesn't fire; a new enterprise tier or a deprecated API does. Above-threshold changes get an LLM analysis and a Slack alert; the accumulated history answers ad-hoc questions (`/competitive-intelligence query …`).
 
 History is durable — embeddings live in pgvector (Aurora), so a pod restart or rollout diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any unseeded source is treated as baseline seeding (ingest + embed, no alerts). Bedrock (Claude Sonnet via Converse for analysis, Titan v2 for embeddings) is the default and runs on-account via IRSA — no keys; Anthropic and OpenAI are pluggable alternates. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the bounded contexts, the crawl→alert data flow, and the load-bearing decisions.
 
@@ -62,14 +62,14 @@ Monitored pages live in `sources.json` (validated with Zod on load; `sources.exa
 
 ## Slack
 
-Slack is optional — the CLI works without it. To enable: create a Slack app, add bot scopes (`app_mentions:read`, `chat:write`, `commands`, `im:history`, `im:read`, `im:write`), subscribe to `app_mention` + `message.im` events, register the `/sigint` slash command, and (for Socket Mode) generate an app-level token with `connections:write`. Then set `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, and `SLACK_APP_TOKEN`. If `SLACK_APP_TOKEN` is set the bot runs in Socket Mode (no public URL); otherwise it listens for HTTP events on `PORT`.
+Slack is optional — the CLI works without it. To enable: create a Slack app, add bot scopes (`app_mentions:read`, `chat:write`, `commands`, `im:history`, `im:read`, `im:write`), subscribe to `app_mention` + `message.im` events, register the `/competitive-intelligence` slash command, and (for Socket Mode) generate an app-level token with `connections:write`. Then set `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, and `SLACK_APP_TOKEN`. If `SLACK_APP_TOKEN` is set the bot runs in Socket Mode (no public URL); otherwise it listens for HTTP events on `PORT`.
 
-| Command                    | Description                     |
-| -------------------------- | ------------------------------- |
-| `/sigint query <question>` | Ask about competitors           |
-| `/sigint crawl`            | Trigger an immediate crawl      |
-| `/sigint status`           | Show system uptime and health   |
-| `@<bot> <question>`        | Ask via @mention in any channel |
+| Command                                      | Description                     |
+| -------------------------------------------- | ------------------------------- |
+| `/competitive-intelligence query <question>` | Ask about competitors           |
+| `/competitive-intelligence crawl`            | Trigger an immediate crawl      |
+| `/competitive-intelligence status`           | Show system uptime and health   |
+| `@<bot> <question>`                          | Ask via @mention in any channel |
 
 ## Deploy
 

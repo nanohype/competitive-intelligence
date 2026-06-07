@@ -33,6 +33,14 @@ aws:
   # helm-template / kind smoke runs where no real IAM role exists).
   platformRoleArn: ""
 
+# Resource attributes the shared chart labels read (tenant-chart-base.labels →
+# agents.nanohype.dev/{tenant,platform}). The OTEL_RESOURCE_ATTRIBUTES env var
+# under `env:` carries the same values into the app's OTel SDK at runtime.
+otel:
+  resourceAttributes:
+    agents.tenant: protohype
+    agents.platform: competitive-intelligence
+
 resources:
   requests:
     cpu: 250m
