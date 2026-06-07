@@ -1,6 +1,6 @@
 # Architecture
 
-`competitive-intelligence` is a radar that watches competitor websites for meaningful change. It crawls a configured set of pages on an interval, embeds the content, semantic-diffs each page against its own history, and — when a change is significant — has an LLM analyze the new content and fire a Slack alert. Accumulated intelligence is queryable over Slack (`/sigint`) and the CLI. This document covers the bounded contexts, the load-bearing decisions, the per-crawl data flow, and where the boundaries sit relative to the rest of the stack.
+`competitive-intelligence` is a radar that watches competitor websites for meaningful change. It crawls a configured set of pages on an interval, embeds the content, semantic-diffs each page against its own history, and — when a change is significant — has an LLM analyze the new content and fire a Slack alert. Accumulated intelligence is queryable over Slack (`/competitive-intelligence`) and the CLI. This document covers the bounded contexts, the load-bearing decisions, the per-crawl data flow, and where the boundaries sit relative to the rest of the stack.
 
 ## Bounded contexts
 
@@ -12,7 +12,7 @@ The system organizes around eight contexts. Cross-boundary services go through a
 | **pipeline**   | `src/pipeline/`   | `ingestAndDiff` runs chunk → embed → diff → replace per page. `chunker.ts` recursively splits text with overlap; `differ.ts` scores a chunk "new" when its best same-source match scores below the 0.85 cosine threshold (or there's no match). The cold-start baseline guard lives here |
 | **intel**      | `src/intel/`      | `createIntelEngine` is the query facade (embed question → vector search → LLM answer with context). `analysis.ts` holds the LLM change-analysis (significance + signal extraction) and the query/analysis system prompts                                                                 |
 | **alerts**     | `src/alerts/`     | `createAlertEngine.processDiffs` threshold-gates on change score, runs LLM analysis, formats Block Kit, and dispatches to the alert sink. `formatter.ts` builds the alert + digest blocks                                                                                                |
-| **slack**      | `src/slack/`      | `@slack/bolt` app — @mention + DM query handlers (`handlers.ts`), the `/sigint query\|crawl\|status` slash command (`commands.ts`), and the alert `sink` the alert engine dispatches through. Socket Mode when `SLACK_APP_TOKEN` is set, HTTP mode otherwise                             |
+| **slack**      | `src/slack/`      | `@slack/bolt` app — @mention + DM query handlers (`handlers.ts`), the `/competitive-intelligence query\|crawl\|status` slash command (`commands.ts`), and the alert `sink` the alert engine dispatches through. Socket Mode when `SLACK_APP_TOKEN` is set, HTTP mode otherwise           |
 | **providers**  | `src/providers/`  | The registry seam. `llm.ts` (Bedrock / Anthropic / OpenAI), `embeddings.ts` (Bedrock Titan / OpenAI), `vectors.ts` (`MemoryVectorStore` + `PgVectorStore` behind the `VectorStore` interface). All selected by config                                                                    |
 | **scheduler**  | `src/scheduler/`  | `createScheduler` is a `setInterval`-based job runner. Runs one global crawl over all sources at `CRAWL_INTERVAL_MINUTES`. The crawl mutex (in `src/index.ts`) prevents the scheduler and a slash-command crawl from overlapping                                                         |
 | **resilience** | `src/resilience/` | `CircuitBreaker` — a threshold-based breaker used per-host by the fetcher and per-provider by the LLM/embeddings providers. Trip → fail fast → half-open probe → recover                                                                                                                 |
@@ -33,7 +33,7 @@ The belt-and-suspenders is a **cold-start baseline guard** in the pipeline: when
 
 ### Single-writer scheduler (`replicaCount: 1`)
 
-The scheduler runs one global crawl over all sources, and an in-process mutex prevents the scheduler and a `/sigint crawl` from racing. Both assume a single writer. The differ does a read-then-replace per source (`deleteByMetadata` + `upsert`), so two pods crawling the same source concurrently would race that replace and could double-fire alerts. The chart pins `replicaCount: 1`; scaling horizontally would require leader election, which isn't in scope. This is documented in the chart and called out here so nobody bumps the replica count expecting throughput.
+The scheduler runs one global crawl over all sources, and an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from racing. Both assume a single writer. The differ does a read-then-replace per source (`deleteByMetadata` + `upsert`), so two pods crawling the same source concurrently would race that replace and could double-fire alerts. The chart pins `replicaCount: 1`; scaling horizontally would require leader election, which isn't in scope. This is documented in the chart and called out here so nobody bumps the replica count expecting throughput.
 
 ### Bedrock-default LLM via IRSA, with Anthropic/OpenAI alternates
 
@@ -52,7 +52,7 @@ Cache effectiveness is **measured, not assumed**. The provider records Bedrock t
 ## Data flow: a single crawl
 
 ```
-1.  scheduler fires (every CRAWL_INTERVAL_MINUTES) — or /sigint crawl, or `npm run crawl`
+1.  scheduler fires (every CRAWL_INTERVAL_MINUTES) — or /competitive-intelligence crawl, or `npm run crawl`
 2.  crawl mutex — already running? skip (single-writer)
 3.  crawlAll(sources): per source, guardUrl → fetch (per-host breaker) → cheerio HTML→text
 4.  ingestAndDiff(pages): per page →
@@ -69,7 +69,7 @@ Cache effectiveness is **measured, not assumed**. The provider records Bedrock t
 Querying is the other entry point, independent of the crawl loop:
 
 ```
-/sigint query <q>  (or `npm run query -- "<q>"`)
+/competitive-intelligence query <q>  (or `npm run query -- "<q>"`)
   → embed question → vector search (top-K, cosine) → LLM answer over retrieved context → reply
 ```
 

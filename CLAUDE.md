@@ -2,11 +2,11 @@
 
 Competitive-intelligence radar — crawls competitor sites, semantic-diffs each page against its own history, and alerts Slack when something meaningfully changes.
 
-> The GitHub repo, npm package, OTel `service.name` / `agents.platform`, image repo, and `competitive-intelligence/<env>/*` secret prefixes are all `competitive-intelligence`. The Slack surface is the exception — the slash command stays `/sigint` and the default alert channel stays `#competitive-intel` (the names users type and watch).
+> The repo, npm package, OTel `service.name` / `agents.platform`, image repo, `competitive-intelligence/<env>/*` secret prefixes, and the Slack slash command (`/competitive-intelligence`) are all the literal name. The default alert channel is `#competitive-intel` — a short handle the team watches.
 
 ## What This Is
 
-A standalone Platform tenant of the `protohype` team on the `eks-agent-platform` operator. It monitors a configured set of competitor pages: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert. The accumulated intelligence is queryable over Slack (`/sigint query`) and the CLI.
+A standalone Platform tenant of the `protohype` team on the `eks-agent-platform` operator. It monitors a configured set of competitor pages: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert. The accumulated intelligence is queryable over Slack (`/competitive-intelligence query`) and the CLI.
 
 Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config, so swapping a backend is a one-file change to the bootstrap. Bedrock is the default for LLM (Converse) and embeddings (Titan v2), running on the AWS credential chain → IRSA on the cluster, no keys. Anthropic and OpenAI are pluggable alternates.
 
@@ -15,7 +15,7 @@ Built around a provider-registry seam — LLM, embeddings, and vector store are 
 ```
 sources.json → Crawler → Pipeline (chunk → embed → semantic diff) → Alert Engine → Slack (#competitive-intel)
                                                                           ↕
-                                                               Intel Engine (query via /sigint or CLI)
+                                                               Intel Engine (query via /competitive-intelligence or CLI)
 ```
 
 Core insight: semantic diffing via embedding cosine similarity, not text comparison. A chunk is "new" only when its cosine similarity to the best stored match for the same source is below 0.85; a page's change score is `newChunks / totalChunks`. Only semantically novel content above `SIGNIFICANCE_THRESHOLD` triggers an alert.
@@ -29,7 +29,7 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 - **src/pipeline/** — Recursive text chunker with overlap → embed → semantic diff against stored vectors → `deleteByMetadata` old chunks → upsert new. Holds the cold-start baseline guard.
 - **src/intel/** — Query facade: embed question → vector search → LLM-generated answer with context. `analysis.ts` holds the LLM change analysis (significance + signal extraction) and the cached analysis/query system prompts.
 - **src/alerts/** — Threshold gating on change score → LLM analysis → Slack Block Kit formatting → dispatch through the alert sink. `formatDigest()` in `formatter.ts` exists for a future digest scheduler job.
-- **src/slack/** — `@slack/bolt` app. @mention + DM query handlers (`handlers.ts`), `/sigint query|crawl|status` slash command (`commands.ts`). Socket Mode when `SLACK_APP_TOKEN` is set, HTTP mode otherwise.
+- **src/slack/** — `@slack/bolt` app. @mention + DM query handlers (`handlers.ts`), `/competitive-intelligence query|crawl|status` slash command (`commands.ts`). Socket Mode when `SLACK_APP_TOKEN` is set, HTTP mode otherwise.
 - **src/scheduler/** — `setInterval`-based job runner. One global crawl over all sources at a configurable interval. The crawl mutex (in `index.ts`) prevents the scheduler and a slash-command crawl from overlapping.
 - **src/index.ts** — Bootstrap. Wires config → providers → sources → crawl loop → intel/alert engines → Slack bot → scheduler. Runs a `node:http` server for `/health` (liveness) + `/readyz` (readiness — vector store reachable, Slack connected in Socket Mode) on `PORT`, independent of Slack transport. Runs an initial crawl on boot, then on interval. Graceful shutdown on SIGINT/SIGTERM.
 - **src/cli.ts** — One-off `crawl` and `query` commands for use without Slack.

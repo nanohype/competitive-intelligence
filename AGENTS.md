@@ -2,11 +2,11 @@
 
 You're an AI client (or the author of one) about to run this service locally, add a crawl source, wire a new LLM or embedding provider, swap the vector backend, or ship it as a Platform tenant. This file gets you running in five minutes. For the wider picture — how this repo fits into the nanohype stack — read the [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md).
 
-> The GitHub repo, product name, npm package, OTel `service.name` / `agents.platform`, image repo, and `competitive-intelligence/<env>/*` secret prefixes are all `competitive-intelligence`. The Slack surface is the exception: the slash command stays `/sigint` and the default alert channel stays `#competitive-intel` — those are the names users type and watch, so they don't rename with the repo.
+> The repo, product name, npm package, OTel `service.name` / `agents.platform`, image repo, `competitive-intelligence/<env>/*` secret prefixes, and the Slack slash command (`/competitive-intelligence`) are all the literal name. The default alert channel is `#competitive-intel` — a short handle users watch.
 
 ## What this repo gives you
 
-A competitive-intelligence radar. It crawls competitor marketing/docs/pricing pages on an interval, embeds the content, and **semantic-diffs** each page against the last crawl using embedding cosine similarity — not text comparison. Only semantically novel content counts as a change. When a page's change score clears the significance threshold, an LLM analyzes the new content (summary + significance + extracted signals) and fires a Slack alert to `#competitive-intel`. You can also query the accumulated intelligence over Slack (`/sigint query …`) or the CLI.
+A competitive-intelligence radar. It crawls competitor marketing/docs/pricing pages on an interval, embeds the content, and **semantic-diffs** each page against the last crawl using embedding cosine similarity — not text comparison. Only semantically novel content counts as a change. When a page's change score clears the significance threshold, an LLM analyzes the new content (summary + significance + extracted signals) and fires a Slack alert to `#competitive-intel`. You can also query the accumulated intelligence over Slack (`/competitive-intelligence query …`) or the CLI.
 
 The load-bearing property is that **history is durable**. Embeddings live in pgvector (Aurora), so a pod restart, rollout, or node drain diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any source whose stored vector count is zero is treated as baseline seeding (ingest + embed, no alerts), so a genuine first deploy or an empty backend doesn't flood the channel.
 
@@ -21,7 +21,7 @@ cp sources.example.json sources.json
 npm run dev                # tsx watch src/index.ts — scheduler + Slack bot + /health on :3000
 ```
 
-Local dev defaults to `VECTOR_PROVIDER=memory` (no database needed). Point `VECTOR_PROVIDER=pgvector` + `DATABASE_URL` at a Postgres with the `vector` extension to exercise durable history. In Slack: `/sigint query what changed at <competitor> this week?`
+Local dev defaults to `VECTOR_PROVIDER=memory` (no database needed). Point `VECTOR_PROVIDER=pgvector` + `DATABASE_URL` at a Postgres with the `vector` extension to exercise durable history. In Slack: `/competitive-intelligence query what changed at <competitor> this week?`
 
 ```bash
 task ci                    # build + lint + typecheck + format:check + test + helm + docker (CI parity)
@@ -129,7 +129,7 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 - **Bedrock-default LLM.** Bedrock (Converse for the LLM, Titan for embeddings) is the default and runs on the AWS credential chain — IRSA on the cluster, no keys. Anthropic/OpenAI are alternates that only register when their key is present.
 - **Prompt caching.** The analysis system prompt is identical on every diff, so the Converse request marks a `cachePoint` after the system block. Cache hits are emitted as a metric — see `ARCHITECTURE.md` § Prompt caching.
 - **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings. Threshold-based, no library.
-- **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler runs one global crawl over all sources on an interval; an in-process mutex prevents the scheduler and a `/sigint crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
+- **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler runs one global crawl over all sources on an interval; an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
 - **SSRF-guarded crawling.** Every outbound crawl URL passes `guardUrl` (`src/crawler/url-guard.ts`) — rejects loopback, RFC1918, link-local, and cloud-metadata addresses before the fetch.
 - TypeScript strict, ESM NodeNext, Node ≥ 24. Zod at every boundary (config, sources, log level). Structured JSON logging to stderr via Pino; stdout is reserved for CLI output. Explicit timeouts on every external call.
 

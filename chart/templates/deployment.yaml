@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "competitive-intelligence.fullname" . }}
+  name: {{ include "tenant-chart-base.fullname" . }}
   labels:
-    {{- include "competitive-intelligence.labels" . | nindent 4 }}
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
 spec:
   # Single writer: the scheduler runs one global crawl on an interval, guarded by
   # an in-process crawl mutex. Pinned to one replica — see values.yaml. No HPA.
@@ -15,18 +15,18 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "competitive-intelligence.selectorLabels" . | nindent 6 }}
+      {{- include "tenant-chart-base.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "competitive-intelligence.labels" . | nindent 8 }}
+        {{- include "tenant-chart-base.labels" . | nindent 8 }}
       annotations:
         # Roll the pod when the ExternalSecret-managed Secret changes. Without
         # this the Deployment keeps the old env vars cached on the pod spec hash;
         # ExternalSecret writes are otherwise picked up on next pod restart only.
         checksum/external-secret: {{ printf "%s-%s" .Values.externalSecret.remoteRefSecret .Values.externalSecret.refreshInterval | sha256sum }}
     spec:
-      serviceAccountName: {{ include "competitive-intelligence.serviceAccountName" . }}
+      serviceAccountName: {{ include "tenant-chart-base.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -61,7 +61,7 @@ spec:
             # AWS Secrets Manager JSON keys (SLACK_BOT_TOKEN, etc.) plus the
             # Aurora-credentials sub-secret keys (PGUSER, PGPASSWORD).
             - secretRef:
-                name: {{ include "competitive-intelligence.fullname" . }}-secrets
+                name: {{ include "tenant-chart-base.fullname" . }}-secrets
           livenessProbe:
             {{- toYaml .Values.probes.liveness | nindent 12 }}
           readinessProbe:

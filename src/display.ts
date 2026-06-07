@@ -67,7 +67,7 @@ function badge(significance: string): string {
 
 export function header(): void {
   console.log(
-    `\n  ${c.bold}${c.cyan}sigint${c.reset} ${c.dim}— competitive intelligence radar${c.reset}\n`,
+    `\n  ${c.bold}${c.cyan}competitive-intelligence${c.reset} ${c.dim}— radar${c.reset}\n`,
   );
 }
 
