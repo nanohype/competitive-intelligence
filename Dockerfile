@@ -18,10 +18,11 @@ RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Compiled output + the example sources manifest (the bundled crawl-source
-# catalog the app reads when no sources.json is mounted).
+# Compiled output + the starter crawl-source catalog. The app reads
+# `sources.json` (src/index.ts, src/cli.ts), so ship the example as that path;
+# mount a curated sources.json over it per-env to monitor a real source list.
 COPY --from=builder /app/dist ./dist
-COPY sources.example.json ./
+COPY sources.example.json ./sources.json
 
 USER app
 

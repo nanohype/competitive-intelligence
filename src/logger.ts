@@ -28,3 +28,7 @@ export const logger = {
   warn: (msg: string, data?: Record<string, unknown>) => log("warn", msg, data),
   error: (msg: string, data?: Record<string, unknown>) => log("error", msg, data),
 };
+
+/** Normalize an unknown thrown value to a string message. */
+export const toMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);

@@ -157,7 +157,7 @@
       "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum(rate(competitive_intelligence_bedrock_cache_read_tokens_total{deployment_environment=\"$environment\"}[5m])) / clamp_min(sum(rate(competitive_intelligence_bedrock_input_tokens_total{deployment_environment=\"$environment\"}[5m])), 1)",
+          "expr": "sum(rate(competitive_intelligence_bedrock_cache_read_tokens_total{deployment_environment=\"$environment\"}[5m])) / clamp_min(sum(rate(competitive_intelligence_bedrock_cache_read_tokens_total{deployment_environment=\"$environment\"}[5m])) + sum(rate(competitive_intelligence_bedrock_cache_write_tokens_total{deployment_environment=\"$environment\"}[5m])), 1)",
           "legendFormat": "cache-hit ratio",
           "refId": "A"
         }

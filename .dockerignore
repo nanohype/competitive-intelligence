@@ -1,0 +1,24 @@
+# Keep the Docker build context minimal — the Dockerfile only needs
+# package*.json, tsconfig.json, src/, and sources.example.json. Excluding the
+# rest speeds builds and keeps local secrets/artifacts out of image layers.
+node_modules
+dist
+coverage
+.git
+.github
+.gitignore
+.gitleaks.toml
+.editorconfig
+.prettierrc
+.prettierignore
+eslint.config.js
+vitest.config.ts
+chart
+docs
+gitops
+*.md
+.env*
+platform.yaml
+renovate.json
+Taskfile.yaml
+src/**/*.test.ts

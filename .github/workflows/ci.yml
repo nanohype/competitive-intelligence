@@ -48,8 +48,9 @@ jobs:
       - name: Test
         # OTEL_SDK_DISABLED short-circuits the OTel SDK so the test run never
         # tries to reach the cluster collector. The metrics/tracing API
-        # degrades to a no-op without a registered provider.
-        run: npm test
+        # degrades to a no-op without a registered provider. --coverage enforces
+        # the thresholds in vitest.config.ts so coverage can't silently regress.
+        run: npm run test:coverage
         env:
           OTEL_SDK_DISABLED: "true"
 

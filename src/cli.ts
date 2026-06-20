@@ -1,16 +1,13 @@
 import { loadConfig } from "./config.js";
-import { logger, setLogLevel } from "./logger.js";
+import { logger, setLogLevel, toMessage } from "./logger.js";
 import { bootstrapLlm } from "./providers/llm.js";
 import { bootstrapEmbeddings } from "./providers/embeddings.js";
 import { bootstrapVectorStore } from "./providers/vectors.js";
 import { loadSourcesFromFile } from "./crawler/sources.js";
-import { fetchPage } from "./crawler/fetcher.js";
-import { parseHtml } from "./crawler/parser.js";
+import { crawlAll } from "./crawler/index.js";
 import { ingestAndDiff } from "./pipeline/index.js";
 import { createIntelEngine } from "./intel/index.js";
 import { createAlertEngine } from "./alerts/index.js";
-import type { ParsedContent } from "./crawler/parser.js";
-import type { Source } from "./crawler/sources.js";
 import * as ui from "./display.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -35,36 +32,22 @@ async function main(): Promise<void> {
       ui.header();
       ui.crawlStart(sources);
 
-      // Crawl with per-source progress
-      const succeeded: ParsedContent[] = [];
-      const failed: Array<{ source: Source; error: string }> = [];
+      // Reuse the shared crawl loop, streaming per-source progress through the
+      // callback instead of duplicating fetch→parse→collect here.
+      const crawlResult = await crawlAll(sources, {
+        timeoutMs: config.crawlTimeoutMs,
+        userAgent: config.userAgent,
+        onResult: ui.crawlSourceResult,
+      });
 
-      for (const source of sources) {
-        try {
-          const result = await fetchPage(source.url, {
-            timeoutMs: config.crawlTimeoutMs,
-            userAgent: config.userAgent,
-          });
-          const parsed = parseHtml(result.html, source, result.fetchedAt);
-          succeeded.push(parsed);
-          ui.crawlSourceResult(source, { ok: true, parsed });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          failed.push({ source, error: message });
-          ui.crawlSourceResult(source, { ok: false, error: message });
-        }
-      }
-
-      const crawlResult = { succeeded, failed };
-
-      if (succeeded.length === 0) {
-        ui.failuresDetail(failed);
+      if (crawlResult.succeeded.length === 0) {
+        ui.failuresDetail(crawlResult.failed);
         console.error("\n  All crawls failed. Nothing to process.\n");
         process.exit(1);
       }
 
       // Pipeline
-      const pipeline = await ingestAndDiff(succeeded, embedder, store);
+      const pipeline = await ingestAndDiff(crawlResult.succeeded, embedder, store);
       ui.pipelineSummary(crawlResult, pipeline);
 
       // Analysis
@@ -79,7 +62,7 @@ async function main(): Promise<void> {
       }
 
       // Failures
-      ui.failuresDetail(failed);
+      ui.failuresDetail(crawlResult.failed);
 
       // Summary
       ui.summary(crawlResult, pipeline, analyses, sources.length);
@@ -122,6 +105,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error("cli error", { error: err instanceof Error ? err.message : String(err) });
+  logger.error("cli error", { error: toMessage(err) });
   process.exit(1);
 });

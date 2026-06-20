@@ -74,10 +74,35 @@ function isBlockedAddress(addr: string): boolean {
     return false;
   }
 
-  // IPv6: loopback, link-local (fe80::/10), unique-local (fc00::/7), unspecified.
   const lower = addr.toLowerCase();
+
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d). `new URL()` normalizes the dotted tail to
+  // a hex-quad (::ffff:7f00:1, ::ffff:a9fe:a9fe), so decode both forms and
+  // re-gate on the embedded IPv4 — otherwise mapped loopback / RFC1918 / cloud
+  // metadata slips past the IPv4 checks above.
+  if (lower.startsWith("::ffff:")) {
+    const mapped = ipv4FromMapped(lower.slice("::ffff:".length));
+    if (mapped && isBlockedAddress(mapped)) return true;
+  }
+
+  // IPv6: loopback, link-local (fe80::/10), unique-local (fc00::/7), unspecified.
   if (lower === "::1" || lower === "::") return true;
   if (lower.startsWith("fe80:") || lower.startsWith("fe80::")) return true;
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
   return false;
+}
+
+/** Decode the tail of an IPv4-mapped IPv6 address to dotted IPv4, or null. */
+function ipv4FromMapped(tail: string): string | null {
+  // Dotted form (::ffff:1.2.3.4) — rare after URL normalization, but cheap to handle.
+  if (tail.includes(".")) {
+    return isIP(tail) === 4 ? tail : null;
+  }
+  // Hex-quad form (::ffff:7f00:1) — two 16-bit groups = the embedded 4 bytes.
+  const groups = tail.split(":");
+  if (groups.length !== 2) return null;
+  const hi = Number.parseInt(groups[0], 16);
+  const lo = Number.parseInt(groups[1], 16);
+  if (Number.isNaN(hi) || Number.isNaN(lo)) return null;
+  return [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff].join(".");
 }

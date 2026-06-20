@@ -4,6 +4,7 @@ import type { VectorStore, VectorDocument } from "../providers/vectors.js";
 import { chunkText } from "./chunker.js";
 import { semanticDiff, type DiffResult } from "./differ.js";
 import { logger } from "../logger.js";
+import { recordChunksProcessed, recordChangeScore, recordDiffsProcessed } from "../metrics.js";
 
 export interface PipelineResult {
   diffs: DiffResult[];
@@ -81,14 +82,16 @@ export async function ingestAndDiff(
       diff = await semanticDiff(chunks, embeddings, store, {
         competitor: page.competitor,
       });
+      recordChangeScore(diff.changeScore);
     }
     diffs.push(diff);
 
-    // 4. Replace all stored vectors for this source. deleteByMetadata removes
-    // every chunk matching the sourceId, preventing stale orphans when a page
-    // shrinks (e.g., 10 chunks → 6 — the old 6-9 are cleaned up).
-    await store.deleteByMetadata({ sourceId: page.sourceId });
-
+    // 4. Replace this source's stored vectors, ordered so a mid-write failure
+    // can never wipe the source's history (which the cold-start guard would
+    // silently re-baseline, dropping a real change). Upsert the new chunks
+    // FIRST — idempotent on chunk IDs — then prune only the stale chunks
+    // (those not in the new set). A failed upsert throws with the old chunks
+    // intact; a failed prune leaves harmless duplicates the next crawl cleans.
     const docs: VectorDocument[] = chunks.map((chunk, i) => ({
       id: chunk.id,
       content: chunk.text,
@@ -96,9 +99,15 @@ export async function ingestAndDiff(
       metadata: chunk.metadata,
     }));
     await store.upsert(docs);
+    await store.deleteByMetadata(
+      { sourceId: page.sourceId },
+      docs.map((d) => d.id),
+    );
     totalChunksStored += docs.length;
+    recordChunksProcessed(docs.length);
   }
 
+  recordDiffsProcessed(diffs.length);
   logger.info("pipeline complete", {
     pages: pages.length,
     diffs: diffs.length,

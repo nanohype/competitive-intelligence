@@ -1,21 +1,36 @@
 /**
  * Application metrics via the OTel Metrics API.
  *
- * Exports OTLP to the cluster OTel Collector (the SDK in `otel.ts` wires the
- * meter provider; the chart points it at
- * `otel-collector.observability.svc.cluster.local:4318` → Grafana Cloud Mimir).
+ * Exports OTLP to the cluster OTel Collector. The meter provider is installed by
+ * the Dockerfile's `--require @opentelemetry/auto-instrumentations-node/register`
+ * preload (env-driven); the chart points it at
+ * `otel-collector.observability.svc.cluster.local:4318` → Grafana Cloud Mimir.
  *
- * Two generic call-site helpers — `timing` (histogram, ms) and `counter`
- * (monotonic counter) — back named convenience wrappers for the hot paths:
- * crawl duration, chunks/diffs processed, alerts fired, Bedrock token counts
- * (by kind: input/output/cache_read/cache_write), and circuit-breaker trips.
+ * Generic call-site helpers — `timing` (ms histogram), `distribution` (unitless
+ * histogram) and `counter` (monotonic counter) — back named convenience wrappers
+ * for the hot paths: crawl duration + per-source outcome, chunks/diffs processed,
+ * change-score distribution, alerts fired + send failures, pgvector errors,
+ * Bedrock token counts (one metric per kind so cache effectiveness is visible),
+ * and a circuit-breaker open/closed gauge.
+ *
+ * Metric names map to the `competitive_intelligence_*` series the chart's Grafana
+ * dashboard and PrometheusRule query: an OTel instrument named `crawl.failures`
+ * (a counter) arrives in Mimir as `competitive_intelligence_crawl_failures_total`
+ * after the OTLP→Prometheus naming convention + the collector's service-name
+ * namespace are applied. Keep instrument names in sync with the chart.
  *
  * When no meter provider is registered (tests, CI, or any run with
  * `OTEL_SDK_DISABLED=true`), the OTel API degrades to a no-op. That's
  * intentional: nothing here throws without a backend, so call sites stay
  * unconditional.
  */
-import { metrics as otelMetrics, type Counter, type Histogram } from "@opentelemetry/api";
+import {
+  metrics as otelMetrics,
+  type Counter,
+  type Histogram,
+  type ObservableGauge,
+  type ObservableResult,
+} from "@opentelemetry/api";
 
 const METER_NAME = "competitive-intelligence";
 
@@ -31,10 +46,12 @@ function getCounter(name: string): Counter {
   return c;
 }
 
-function getHistogram(name: string): Histogram {
+function getHistogram(name: string, unit: string, boundaries?: number[]): Histogram {
   let h = histograms.get(name);
   if (!h) {
-    h = otelMetrics.getMeter(METER_NAME).createHistogram(name, { unit: "ms" });
+    const opts: { unit: string; advice?: { explicitBucketBoundaries: number[] } } = { unit };
+    if (boundaries) opts.advice = { explicitBucketBoundaries: boundaries };
+    h = otelMetrics.getMeter(METER_NAME).createHistogram(name, opts);
     histograms.set(name, h);
   }
   return h;
@@ -43,7 +60,21 @@ function getHistogram(name: string): Histogram {
 // ─── Generic helpers ───
 
 export function timing(name: string, ms: number, dimensions?: Record<string, string>): void {
-  getHistogram(name).record(ms, dimensions);
+  getHistogram(name, "ms").record(ms, dimensions);
+}
+
+/**
+ * Record a unitless value into a histogram. `boundaries` sets explicit bucket
+ * edges — required for 0–1 ratios, which otherwise inherit OTel's default
+ * ms-scale buckets ([0,5,...]) and collapse every value into the first bucket.
+ */
+export function distribution(
+  name: string,
+  value: number,
+  dimensions?: Record<string, string>,
+  boundaries?: number[],
+): void {
+  getHistogram(name, "1", boundaries).record(value, dimensions);
 }
 
 export function counter(name: string, value = 1, dimensions?: Record<string, string>): void {
@@ -57,6 +88,16 @@ export function recordCrawlDuration(ms: number): void {
   timing("crawl.duration_ms", ms);
 }
 
+/** One crawled source, dimensioned by outcome (succeeded | failed). */
+export function recordCrawlSource(outcome: "succeeded" | "failed"): void {
+  counter("crawl.sources", 1, { outcome });
+}
+
+/** A crawl failure for one source — backs the CrawlFailureSpike alert. */
+export function recordCrawlFailure(sourceId: string): void {
+  counter("crawl.failures", 1, { sourceId });
+}
+
 /** Chunks produced + embedded in a pipeline pass. */
 export function recordChunksProcessed(count: number): void {
   counter("chunks.processed", count);
@@ -67,20 +108,59 @@ export function recordDiffsProcessed(count: number): void {
   counter("diffs.processed", count);
 }
 
+/** The change score of one non-baseline diff (0–1), as a distribution. */
+export function recordChangeScore(score: number): void {
+  distribution(
+    "change_score",
+    score,
+    undefined,
+    [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+  );
+}
+
 /** Alerts dispatched to Slack. */
 export function recordAlertFired(count = 1): void {
   counter("alerts.fired", count);
 }
 
-export type TokenKind = "input" | "output" | "cache_read" | "cache_write";
-
-/** Bedrock token usage, dimensioned by kind so cache effectiveness is visible. */
-export function recordBedrockTokens(kind: TokenKind, count: number): void {
-  if (count <= 0) return;
-  counter("bedrock.tokens", count, { kind });
+/** A failed Slack alert send — backs the AlertSendFailure alert. */
+export function recordAlertSendFailure(sourceId: string): void {
+  counter("alert.send_failures", 1, { sourceId });
 }
 
-/** A circuit breaker tripping open, dimensioned by breaker name. */
-export function recordCircuitBreakerTrip(name: string): void {
-  counter("circuit_breaker.trips", 1, { breaker: name });
+/** A pgvector store error — backs the PgVectorUnreachable alert. */
+export function recordPgVectorError(): void {
+  counter("pgvector.errors");
+}
+
+export type TokenKind = "input" | "output" | "cache_read" | "cache_write";
+
+/**
+ * Bedrock token usage. Each kind is its own metric name
+ * (`bedrock.input_tokens` → `competitive_intelligence_bedrock_input_tokens_total`)
+ * so the dashboard's per-kind panels — including cache effectiveness — render.
+ */
+export function recordBedrockTokens(kind: TokenKind, count: number): void {
+  if (count <= 0) return;
+  counter(`bedrock.${kind}_tokens`, count);
+}
+
+// ─── Circuit-breaker open gauge ───
+// The CircuitBreakerOpen alert + dashboard panel query a 1/0 gauge labelled by
+// `target`. An ObservableGauge reports current per-breaker state on each scrape;
+// breakers call setCircuitBreakerOpen on every trip/reset.
+
+const breakerOpen = new Map<string, number>();
+let breakerGauge: ObservableGauge | undefined;
+
+export function setCircuitBreakerOpen(name: string, open: boolean): void {
+  breakerOpen.set(name, open ? 1 : 0);
+  if (!breakerGauge) {
+    breakerGauge = otelMetrics.getMeter(METER_NAME).createObservableGauge("circuit_breaker.open");
+    breakerGauge.addCallback((result: ObservableResult) => {
+      for (const [target, value] of breakerOpen) {
+        result.observe(value, { target });
+      }
+    });
+  }
 }

@@ -1,6 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { IntelEngine } from "../intel/index.js";
-import { logger } from "../logger.js";
+import { logger, toMessage } from "../logger.js";
 
 /**
  * Register Slack event handlers.
@@ -37,7 +37,7 @@ export function registerHandlers(app: App, intel: IntelEngine): void {
         thread_ts: event.ts,
       });
     } catch (err) {
-      logger.error("query failed", { error: err instanceof Error ? err.message : String(err) });
+      logger.error("query failed", { error: toMessage(err) });
       await say({
         text: "Something went wrong processing that query. Check the logs for details.",
         thread_ts: event.ts,
@@ -45,9 +45,14 @@ export function registerHandlers(app: App, intel: IntelEngine): void {
     }
   });
 
-  // Handle direct messages
+  // Handle direct messages ONLY. Bolt's generic message listener fires for
+  // every message in every channel the bot can read; without this gate, a busy
+  // channel would trigger an embedding + LLM call (and a reply) on every
+  // message — unbounded Bedrock spend and channel noise. Channel queries go
+  // through the app_mention handler above.
   app.message(async ({ message, say }) => {
     if (message.subtype) return; // skip bot messages, edits, etc.
+    if (message.channel_type !== "im") return;
     if (!("text" in message) || !message.text) return;
 
     const question = message.text.trim();
@@ -59,7 +64,7 @@ export function registerHandlers(app: App, intel: IntelEngine): void {
       const answer = await intel.query(question);
       await say({ text: answer });
     } catch (err) {
-      logger.error("DM query failed", { error: err instanceof Error ? err.message : String(err) });
+      logger.error("DM query failed", { error: toMessage(err) });
       await say({ text: "Something went wrong. Check the logs." });
     }
   });

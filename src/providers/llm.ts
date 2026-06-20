@@ -3,7 +3,15 @@ import OpenAI from "openai";
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { createRegistry } from "./registry.js";
 import { CircuitBreaker } from "../resilience/circuit-breaker.js";
+import { recordBedrockTokens } from "../metrics.js";
 import type { Config } from "../config.js";
+
+// Hard deadlines for every external LLM call. Without these, a hung socket
+// blocks the single-writer crawl indefinitely (the circuit breaker only counts
+// failures *after* a call returns — it cannot abort one in flight). Generous
+// enough for a 4096-token completion; tunable later via config if needed.
+const LLM_TIMEOUT_MS = 60_000;
+const LLM_CONNECT_TIMEOUT_MS = 5_000;
 
 export interface LlmResponse {
   text: string;
@@ -27,7 +35,14 @@ class BedrockLlmProvider implements LlmProvider {
   private modelId: string;
 
   constructor(region: string, modelId: string) {
-    this.client = new BedrockRuntimeClient({ region });
+    this.client = new BedrockRuntimeClient({
+      region,
+      maxAttempts: 3,
+      requestHandler: {
+        connectionTimeout: LLM_CONNECT_TIMEOUT_MS,
+        requestTimeout: LLM_TIMEOUT_MS,
+      },
+    });
     this.modelId = modelId;
   }
 
@@ -44,6 +59,10 @@ class BedrockLlmProvider implements LlmProvider {
           messages: [{ role: "user", content: [{ text: userMessage }] }],
           inferenceConfig: { maxTokens: 4096 },
         }),
+        // Hard deadline at the SDK middleware layer — guarantees the call
+        // aborts even if the underlying socket hangs, regardless of the http
+        // handler's timeout semantics.
+        { abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS) },
       );
 
       const text =
@@ -52,13 +71,22 @@ class BedrockLlmProvider implements LlmProvider {
           .map((b) => b.text)
           .join("") ?? "";
 
-      return {
+      const result: LlmResponse = {
         text,
         inputTokens: response.usage?.inputTokens ?? 0,
         outputTokens: response.usage?.outputTokens ?? 0,
         cacheReadTokens: response.usage?.cacheReadInputTokens ?? 0,
         cacheWriteTokens: response.usage?.cacheWriteInputTokens ?? 0,
       };
+
+      // Emit token usage by kind so the Grafana cache-effectiveness panels
+      // render and ARCHITECTURE's "measured, not assumed" claim holds.
+      recordBedrockTokens("input", result.inputTokens);
+      recordBedrockTokens("output", result.outputTokens);
+      recordBedrockTokens("cache_read", result.cacheReadTokens);
+      recordBedrockTokens("cache_write", result.cacheWriteTokens);
+
+      return result;
     });
   }
 }
@@ -68,15 +96,17 @@ class BedrockLlmProvider implements LlmProvider {
 class AnthropicProvider implements LlmProvider {
   private client: Anthropic;
   private breaker = new CircuitBreaker("anthropic-llm", { failureThreshold: 3 });
+  private model: string;
 
-  constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
+  constructor(apiKey: string, model: string) {
+    this.client = new Anthropic({ apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 2 });
+    this.model = model;
   }
 
   async chat(system: string, userMessage: string): Promise<LlmResponse> {
     return this.breaker.execute(async () => {
       const response = await this.client.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: this.model,
         max_tokens: 4096,
         system,
         messages: [{ role: "user", content: userMessage }],
@@ -103,15 +133,17 @@ class AnthropicProvider implements LlmProvider {
 class OpenAILlmProvider implements LlmProvider {
   private client: OpenAI;
   private breaker = new CircuitBreaker("openai-llm", { failureThreshold: 3 });
+  private model: string;
 
-  constructor(apiKey: string) {
-    this.client = new OpenAI({ apiKey });
+  constructor(apiKey: string, model: string) {
+    this.client = new OpenAI({ apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 2 });
+    this.model = model;
   }
 
   async chat(system: string, userMessage: string): Promise<LlmResponse> {
     return this.breaker.execute(async () => {
       const response = await this.client.chat.completions.create({
-        model: "gpt-4o",
+        model: this.model,
         max_tokens: 4096,
         messages: [
           { role: "system", content: system },
@@ -138,10 +170,16 @@ export function bootstrapLlm(config: Config): LlmProvider {
     () => new BedrockLlmProvider(config.awsRegion, config.bedrockLlmModel),
   );
   if (config.anthropicApiKey) {
-    llmRegistry.register("anthropic", () => new AnthropicProvider(config.anthropicApiKey!));
+    llmRegistry.register(
+      "anthropic",
+      () => new AnthropicProvider(config.anthropicApiKey!, config.anthropicLlmModel),
+    );
   }
   if (config.openaiApiKey) {
-    llmRegistry.register("openai", () => new OpenAILlmProvider(config.openaiApiKey!));
+    llmRegistry.register(
+      "openai",
+      () => new OpenAILlmProvider(config.openaiApiKey!, config.openaiLlmModel),
+    );
   }
   return llmRegistry.get(config.llmProvider);
 }

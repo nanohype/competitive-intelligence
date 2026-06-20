@@ -1,6 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { IntelEngine } from "../intel/index.js";
-import { logger } from "../logger.js";
+import { logger, toMessage } from "../logger.js";
 
 /**
  * Register /competitive-intelligence slash commands.
@@ -12,7 +12,7 @@ import { logger } from "../logger.js";
 export function registerCommands(
   app: App,
   intel: IntelEngine,
-  runCrawl: () => Promise<void>,
+  runCrawl: () => Promise<"ran" | "skipped">,
 ): void {
   app.command("/competitive-intelligence", async ({ command, ack, respond }) => {
     await ack();
@@ -35,9 +35,7 @@ export function registerCommands(
           const answer = await intel.query(body);
           await respond(answer);
         } catch (err) {
-          logger.error("slash query failed", {
-            error: err instanceof Error ? err.message : String(err),
-          });
+          logger.error("slash query failed", { error: toMessage(err) });
           await respond("Query failed. Check the logs.");
         }
         break;
@@ -48,12 +46,14 @@ export function registerCommands(
         await respond(":satellite: Starting crawl...");
 
         try {
-          await runCrawl();
-          await respond(":white_check_mark: Crawl complete.");
+          const outcome = await runCrawl();
+          await respond(
+            outcome === "skipped"
+              ? ":hourglass_flowing_sand: A crawl is already running (or no sources are configured) — skipped."
+              : ":white_check_mark: Crawl complete.",
+          );
         } catch (err) {
-          logger.error("slash crawl failed", {
-            error: err instanceof Error ? err.message : String(err),
-          });
+          logger.error("slash crawl failed", { error: toMessage(err) });
           await respond(":x: Crawl failed. Check the logs.");
         }
         break;

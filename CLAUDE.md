@@ -24,7 +24,7 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 
 ## Architecture
 
-- **src/providers/** — Self-registering provider registry. LLM (`llm.ts`: Bedrock/Anthropic/OpenAI), embeddings (`embeddings.ts`: Bedrock Titan/OpenAI), vector store (`vectors.ts`: `MemoryVectorStore` for dev/tests + `PgVectorStore` for durable production, both behind the `VectorStore` interface). All via `createRegistry<T>()`. The Bedrock LLM marks a Converse `cachePoint` after the static analysis system prompt — cache hits are emitted as `bedrock.tokens{kind:cache_read/cache_write}`.
+- **src/providers/** — Self-registering provider registry. LLM (`llm.ts`: Bedrock/Anthropic/OpenAI), embeddings (`embeddings.ts`: Bedrock Titan/OpenAI), vector store (`vectors.ts`: `MemoryVectorStore` for dev/tests + `PgVectorStore` for durable production, both behind the `VectorStore` interface). All via `createRegistry<T>()`. The Bedrock LLM marks a Converse `cachePoint` after the static analysis system prompt — token usage is emitted per kind as `bedrock.{input,output,cache_read,cache_write}_tokens` so cache effectiveness is measurable. Every external call carries an explicit timeout (Bedrock via `requestHandler` + an `AbortSignal.timeout` deadline, Anthropic/OpenAI via the SDK `timeout` option).
 - **src/crawler/** — HTTP fetcher with per-host circuit breakers, HTML→text via cheerio scoped by `selectors`. SSRF-guarded (`url-guard.ts`) — every outbound URL rejects loopback/RFC1918/link-local/metadata addresses before the fetch. Sequential crawling. `sources.ts` Zod-validates `sources.json` on load.
 - **src/pipeline/** — Recursive text chunker with overlap → embed → semantic diff against stored vectors → `deleteByMetadata` old chunks → upsert new. Holds the cold-start baseline guard.
 - **src/intel/** — Query facade: embed question → vector search → LLM-generated answer with context. `analysis.ts` holds the LLM change analysis (significance + signal extraction) and the cached analysis/query system prompts.
@@ -32,8 +32,9 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 - **src/slack/** — `@slack/bolt` app. @mention + DM query handlers (`handlers.ts`), `/competitive-intelligence query|crawl|status` slash command (`commands.ts`). Socket Mode when `SLACK_APP_TOKEN` is set, HTTP mode otherwise.
 - **src/scheduler/** — `setInterval`-based job runner. One global crawl over all sources at a configurable interval. The crawl mutex (in `index.ts`) prevents the scheduler and a slash-command crawl from overlapping.
 - **src/index.ts** — Bootstrap. Wires config → providers → sources → crawl loop → intel/alert engines → Slack bot → scheduler. Runs a `node:http` server for `/health` (liveness) + `/readyz` (readiness — vector store reachable, Slack connected in Socket Mode) on `PORT`, independent of Slack transport. Runs an initial crawl on boot, then on interval. Graceful shutdown on SIGINT/SIGTERM.
-- **src/cli.ts** — One-off `crawl` and `query` commands for use without Slack.
-- **src/metrics.ts** — OTel metrics surface (`timing` → histogram, `counter` → monotonic counter). Exported OTLP by the auto-instrumentation runtime to the cluster OTel Collector. Degrades to a no-op when no provider is registered (tests).
+- **src/cli.ts** — One-off `crawl` and `query` commands for use without Slack. Reuses `crawlAll` (per-source progress via its `onResult` callback) and renders output through **src/display.ts** (ANSI CLI presentation layer).
+- **OTel init** — telemetry is started once, by the Dockerfile's `--require @opentelemetry/auto-instrumentations-node/register` preload (it must load before any instrumented module is imported, which app code cannot guarantee). All export config is env-driven (`OTEL_*` in the chart); there is no programmatic SDK in the app. `OTEL_SDK_DISABLED=true` short-circuits it for tests/CI/local.
+- **src/metrics.ts** — OTel metrics surface (`timing` → ms histogram, `distribution` → unitless histogram, `counter` → monotonic counter, plus an observable `circuit_breaker.open` gauge). Instrument names map to the `competitive_intelligence_*` series the Grafana dashboard + PrometheusRule query. Exported OTLP to the cluster OTel Collector. Degrades to a no-op when no provider is registered (tests).
 
 ## Commands
 
@@ -63,17 +64,21 @@ All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`
 - `LLM_PROVIDER` — bedrock (default), anthropic, or openai
 - `EMBEDDING_PROVIDER` — bedrock (default) or openai
 - `AWS_REGION` — for Bedrock. Uses the AWS credential chain → IRSA on the cluster, no API keys
-- `BEDROCK_LLM_MODEL` / `BEDROCK_EMBEDDING_MODEL` — model IDs (LLM defaults to a current cross-region Claude Sonnet inference profile; embeddings to Titan Embed v2)
+- `BEDROCK_LLM_MODEL` / `BEDROCK_EMBEDDING_MODEL` — model IDs (LLM defaults to a cross-region Claude Sonnet inference profile; embeddings to Titan Embed v2)
 - `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — only when using those providers directly
+- `ANTHROPIC_LLM_MODEL` / `OPENAI_LLM_MODEL` — direct-API model IDs (defaults `claude-sonnet-4-6` / `gpt-4o`)
+- `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` — OpenAI embedding model + vector size (default 1024; 1024 for Titan v2, 1536 for OpenAI)
 - `VECTOR_PROVIDER` — `pgvector` in cluster (durable, restart-safe), `memory` for local dev/tests
 - `DATABASE_URL` / `PG*` — Postgres connection for pgvector; in cluster these come from `competitive-intelligence/<env>/db-credentials`
+- `PG_CA_PATH` — optional CA bundle for verifying the pgvector TLS connection; unset → Node's built-in trust store
 - `SIGNIFICANCE_THRESHOLD` — 0–1, minimum change score to trigger an alert (default 0.3)
 - `CRAWL_INTERVAL_MINUTES` — default 60
 - `CRAWL_TIMEOUT_MS` — per-page fetch timeout (default 30000)
 - `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_APP_TOKEN` — Slack; absent → CLI-only
 - `SLACK_ALERT_CHANNEL` — alert channel (default `#competitive-intel`)
 - `USER_AGENT` — crawl request User-Agent (default `competitive-intelligence/0.1.0`)
-- `PORT` — HTTP health-server port (default 3000)
+- `PORT` — HTTP health-server port (default 3000); in Slack HTTP mode the Bolt receiver binds `PORT + 1`
+- `NODE_ENV` — development (default), production, or test
 - `LOG_LEVEL` — debug, info (default), warn, error. Zod-validated.
 
 Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment region. Sources are defined in `sources.json` (see `sources.example.json`), Zod-validated on load.

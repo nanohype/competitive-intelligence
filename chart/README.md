@@ -6,18 +6,29 @@ The workload is a single long-lived worker: a scheduler that runs one global cra
 
 ## Files
 
-- `Chart.yaml` — chart metadata
+- `Chart.yaml` — chart metadata + the `tenant-chart-base` dependency (see Dependencies)
 - `values.yaml` — base values (all environments)
 - `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` — per-env deltas
+- `charts/tenant-chart-base/` — vendored library subchart (see Dependencies)
+- `dashboards/competitive-intelligence.json` — the Grafana dashboard JSON loaded by `grafana-dashboard.yaml`
 - `templates/`
   - `deployment.yaml` — the worker pod. Non-root, `readOnlyRootFilesystem` with a `/tmp` emptyDir, env from `values.env` + `tenantInfra.pg*`, secrets via `envFrom: secretRef`, liveness `/health` + readiness `/readyz` on the health port, `checksum/external-secret` pod-roll annotation. `replicaCount: 1` with a `Recreate` strategy — single-writer scheduler + crawl mutex; never run two at once.
   - `service.yaml` — ClusterIP on the health port (default 3000)
-  - `serviceaccount.yaml` — IRSA annotation fed by `aws.platformRoleArn` (per-env), pointing at the landing-zone-owned `competitive-intelligence-platform` IRSA role. No inline IAM.
+  - `serviceaccount.yaml` — thin `tenant-chart-base.serviceaccount` include; IRSA annotation fed by `aws.platformRoleArn` (per-env), pointing at the landing-zone-owned `competitive-intelligence-platform` IRSA role. No inline IAM.
   - `externalsecret.yaml` — pulls Slack tokens + optional provider keys from `competitive-intelligence/<env>/app-secrets` and `PGUSER`/`PGPASSWORD` from `competitive-intelligence/<env>/db-credentials`
-  - `networkpolicy.yaml` — default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR); ingress is same-namespace probes only
-  - `prometheusrule.yaml` — alerts: crawl-failure spike, circuit-breaker open, alert-send failure, pgvector unreachable
-  - `grafana-dashboard.yaml` — ConfigMap (labeled `grafana_dashboard: "1"`) loading the dashboard from `dashboards/competitive-intelligence.json`
-  - `_helpers.tpl` — name/label helpers
+  - `networkpolicy.yaml` — thin `tenant-chart-base.networkpolicy` include; default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR); ingress is same-namespace probes only
+  - `prometheusrule.yaml` — alerts (crawl-failure spike, circuit-breaker open, alert-send failure, pgvector unreachable); uses the base chart's fullname/labels helpers
+  - `grafana-dashboard.yaml` — thin `tenant-chart-base` include rendering a ConfigMap (labeled `grafana_dashboard: "1"`) from `dashboards/competitive-intelligence.json`
+
+## Dependencies
+
+The chart vendors `charts/tenant-chart-base` — a `type: library` chart from
+`nanohype/templates/tenant-chart-base`, declared in `Chart.yaml` as a
+`file://charts/tenant-chart-base` dependency so `helm` works offline with no
+fetch. It provides the shared named templates that render the ServiceAccount,
+NetworkPolicy, PrometheusRule, and Grafana dashboard, plus the name/label
+helpers (`tenant-chart-base.fullname`, `tenant-chart-base.labels`). There is no
+local `_helpers.tpl`; those helpers live in the base subchart.
 
 ## Relationship to companion files
 
@@ -47,7 +58,7 @@ Drop that into `chart/values-production.yaml` under `aws.platformRoleArn`. ArgoC
 
 ## LLM
 
-Bedrock is the default LLM provider (`LLM_PROVIDER=bedrock`), authenticated via IRSA. The model is pinned in `values.yaml` (`BEDROCK_LLM_MODEL: anthropic.claude-sonnet-4-6`, the llm-policy Sonnet default tier) — verify model availability in the target region before promoting, since cross-region inference profiles differ. Anthropic and OpenAI remain pluggable alternates; their keys arrive through the ExternalSecret only when those providers are selected.
+Bedrock is the default LLM provider (`LLM_PROVIDER=bedrock`), authenticated via IRSA. The model is pinned in `values.yaml` (`BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-4-20250514-v1:0`, a cross-region Sonnet inference profile — Converse requires the `us.anthropic.*-v1:0` profile form, not a bare alias) — verify the profile exists in the target region before promoting, since cross-region inference profiles differ. Anthropic and OpenAI remain pluggable alternates; their keys arrive through the ExternalSecret only when those providers are selected.
 
 ## Render locally
 
@@ -70,3 +81,13 @@ This chart owns the app's k8s surface. The cloud substrate and cluster addons si
 
 - `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alerts. Alertmanager (eks-gitops) routes them.
 - `grafana-dashboard.yaml` — a ConfigMap labeled `grafana_dashboard: "1"` loading the dashboard from `chart/dashboards/competitive-intelligence.json`; the Grafana sidecar picks it up automatically.
+
+> **Collector requirement (eks-gitops).** The rules and dashboard query the
+> `competitive_intelligence_*` series with a `deployment_environment` label. That
+> series name + label only materialize if the cluster OTel Collector's Prometheus
+> pipeline applies a `competitive_intelligence` namespace and enables
+> `resource_to_telemetry_conversion` (promoting the `service.name` /
+> `deployment.environment` resource attributes — set here via `OTEL_RESOURCE_ATTRIBUTES`
+> — to metric labels). If panels read empty, check that collector config first.
+> The pod also needs egress to the collector on tcp/4318 (`networkPolicy.egress`,
+> already included here).

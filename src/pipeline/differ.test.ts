@@ -81,4 +81,21 @@ describe("semanticDiff", () => {
     expect(result.changeScore).toBe(0);
     expect(result.totalChunks).toBe(0);
   });
+
+  it("treats a score exactly at the threshold as unchanged", async () => {
+    const chunks = [makeChunk("a:0", "hello")];
+    const embeddings = [[1, 0]];
+
+    // score === threshold → unchanged (the comparison is `score < threshold`)
+    const atThreshold = makeStore([{ id: "a:0", content: "hello", score: 0.85, metadata: {} }]);
+    const r1 = await semanticDiff(chunks, embeddings, atThreshold, { competitor: "acme" });
+    expect(r1.unchangedChunks).toHaveLength(1);
+    expect(r1.newChunks).toHaveLength(0);
+
+    // just below → new
+    const justBelow = makeStore([{ id: "a:0", content: "hello", score: 0.849, metadata: {} }]);
+    const r2 = await semanticDiff(chunks, embeddings, justBelow, { competitor: "acme" });
+    expect(r2.newChunks).toHaveLength(1);
+    expect(r2.unchangedChunks).toHaveLength(0);
+  });
 });

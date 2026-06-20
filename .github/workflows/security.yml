@@ -37,6 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Report step: ALWAYS produce + upload a clean SARIF (exit-code 0) so
+      # code scanning records a SUCCESSFUL analysis. Coupling the SARIF run with
+      # the build gate (exit-code 1) makes Trivy mark the SARIF invocation
+      # unsuccessful whenever a finding exists, which GitHub surfaces as
+      # "Trivy is reporting errors" / a code-scanning configuration error.
       - uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -48,13 +53,8 @@ jobs:
           # them rather than surfacing real findings.
           scan-ref: Dockerfile
           severity: HIGH,CRITICAL
-          # The gate is HIGH/CRITICAL only. Without this, trivy-action builds
-          # the SARIF with all severities and exits non-zero on any of them —
-          # so MEDIUM/LOW lint (e.g. dockerfile best-practice notes) would fail
-          # the build. This keeps the gate to HIGH/CRITICAL while still
-          # surfacing lower-severity findings in the SARIF for code-scanning.
           limit-severities-for-sarif: true
-          exit-code: "1"
+          exit-code: "0"
           format: sarif
           output: trivy-config.sarif
       - uses: github/codeql-action/upload-sarif@v3
@@ -62,12 +62,25 @@ jobs:
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
+      # Gate step: fail the build on HIGH/CRITICAL, reusing the DB the report
+      # step already downloaded (skip-db-update). Separate from the SARIF upload
+      # so a finding fails CI without poisoning the code-scanning analysis.
+      - name: gate on HIGH/CRITICAL
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: Dockerfile
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+          skip-db-update: true
 
   trivy-fs:
     name: trivy (filesystem vuln scan — npm deps)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Report step: always upload a clean SARIF (exit-code 0) — see trivy-config.
       - uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
@@ -77,10 +90,8 @@ jobs:
           # to actionable (patch-available) CVEs.
           scanners: vuln
           severity: HIGH,CRITICAL
-          # Gate on HIGH/CRITICAL only (see trivy-config note); lower-severity
-          # CVEs still upload to code-scanning as warnings.
           limit-severities-for-sarif: true
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
           format: sarif
           output: trivy-fs.sarif
@@ -90,3 +101,16 @@ jobs:
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+      # Gate step: fail the build on HIGH/CRITICAL, reusing the cached DB.
+      - name: gate on HIGH/CRITICAL
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+          skip-dirs: "node_modules"
+          skip-db-update: true

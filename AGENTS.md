@@ -128,10 +128,10 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 - **Provider registry, not inline construction.** LLM / embeddings / vectors are each a `createRegistry<T>(kind)` returning typed `{ register, get, has, names }`. Pick the implementation by config; `src/index.ts` is the only place real clients are built. Swapping a backend is a one-file change to the bootstrap.
 - **Bedrock-default LLM.** Bedrock (Converse for the LLM, Titan for embeddings) is the default and runs on the AWS credential chain — IRSA on the cluster, no keys. Anthropic/OpenAI are alternates that only register when their key is present.
 - **Prompt caching.** The analysis system prompt is identical on every diff, so the Converse request marks a `cachePoint` after the system block. Cache hits are emitted as a metric — see `ARCHITECTURE.md` § Prompt caching.
-- **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings. Threshold-based, no library.
+- **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings, and around the Slack alert sink. Threshold-based, no library.
 - **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler runs one global crawl over all sources on an interval; an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
 - **SSRF-guarded crawling.** Every outbound crawl URL passes `guardUrl` (`src/crawler/url-guard.ts`) — rejects loopback, RFC1918, link-local, and cloud-metadata addresses before the fetch.
-- TypeScript strict, ESM NodeNext, Node ≥ 24. Zod at every boundary (config, sources, log level). Structured JSON logging to stderr via Pino; stdout is reserved for CLI output. Explicit timeouts on every external call.
+- TypeScript strict, ESM NodeNext, Node ≥ 24. Zod at every boundary (config, sources, log level, LLM analysis output). Structured JSON logging to stderr via a hand-rolled logger (`src/logger.ts`); stdout is reserved for CLI output. Explicit timeouts on every external call (Bedrock/Anthropic/OpenAI, pgvector, Slack).
 
 ## Pointers
 
