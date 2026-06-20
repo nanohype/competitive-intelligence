@@ -43,7 +43,7 @@ task ci   # build + lint + typecheck + format:check + test + helm lint/template 
 
 ## Bedrock prerequisites
 
-Bedrock is the default for both LLM and embeddings and runs on the AWS credential chain — no API keys. On the cluster that chain resolves to IRSA; locally it resolves to your `~/.aws` credentials or SSO. Confirm `aws sts get-caller-identity` works, and enable model access for `anthropic.claude-sonnet-4-6` (or your configured `BEDROCK_LLM_MODEL`) and `amazon.titan-embed-text-v2:0` in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for your region. To use a direct API provider instead, set `LLM_PROVIDER` / `EMBEDDING_PROVIDER` and the matching key.
+Bedrock is the default for both LLM and embeddings and runs on the AWS credential chain — no API keys. On the cluster that chain resolves to IRSA; locally it resolves to your `~/.aws` credentials or SSO. Confirm `aws sts get-caller-identity` works, and enable model access for the configured `BEDROCK_LLM_MODEL` (default `us.anthropic.claude-sonnet-4-20250514-v1:0`) and `amazon.titan-embed-text-v2:0` in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for your region. To use a direct API provider instead, set `LLM_PROVIDER` / `EMBEDDING_PROVIDER` and the matching key.
 
 ## Sources
 

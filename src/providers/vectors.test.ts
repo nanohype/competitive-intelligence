@@ -64,6 +64,20 @@ describe("MemoryVectorStore", () => {
     expect(await store.count()).toBe(1);
   });
 
+  it("deleteByMetadata keeps the excluded ids (upsert-then-prune)", async () => {
+    const store = bootstrapVectorStore(makeConfig());
+    await store.upsert([
+      { id: "x:0", content: "a", embedding: [1, 0, 0], metadata: { sourceId: "x" } },
+      { id: "x:1", content: "b", embedding: [0, 1, 0], metadata: { sourceId: "x" } },
+      { id: "x:2", content: "c", embedding: [0, 0, 1], metadata: { sourceId: "x" } },
+    ]);
+
+    // Prune everything for the source except the two "new" chunks.
+    const deleted = await store.deleteByMetadata({ sourceId: "x" }, ["x:0", "x:1"]);
+    expect(deleted).toBe(1);
+    expect(await store.count({ sourceId: "x" })).toBe(2);
+  });
+
   it("delete removes by ID", async () => {
     const store = bootstrapVectorStore(makeConfig());
     await store.upsert([
@@ -108,14 +122,21 @@ function fakeQuery(responses: PgQueryResult[]): {
 
 const ddl = (): PgQueryResult => ({ rows: [], rowCount: 0 });
 
+// The schema bootstrap runs 5 statements in order: CREATE EXTENSION, CREATE
+// TABLE, the atttypmod dimension check (returns the configured dim so the drift
+// guard passes), CREATE INDEX (hnsw), CREATE INDEX (gin).
+const schema = (dim: number): PgQueryResult[] => [
+  ddl(),
+  ddl(),
+  { rows: [{ atttypmod: dim }], rowCount: 1 },
+  ddl(),
+  ddl(),
+];
+
 describe("PgVectorStore", () => {
   it("runs idempotent schema DDL once on first use, then reuses it", async () => {
-    // 4 DDL statements (extension, table, ivfflat index, gin index) + the op.
     const { port, spy } = fakeQuery([
-      ddl(),
-      ddl(),
-      ddl(),
-      ddl(),
+      ...schema(3),
       { rows: [{ n: 0 }], rowCount: 1 },
       { rows: [{ n: 0 }], rowCount: 1 },
     ]);
@@ -126,12 +147,12 @@ describe("PgVectorStore", () => {
 
     const sqls = spy.mock.calls.map((c) => c[0] as string);
     expect(sqls.filter((s) => s.includes("CREATE EXTENSION IF NOT EXISTS vector"))).toHaveLength(1);
-    expect(sqls.some((s) => s.includes("USING ivfflat (embedding vector_cosine_ops)"))).toBe(true);
+    expect(sqls.some((s) => s.includes("USING hnsw (embedding vector_cosine_ops)"))).toBe(true);
     expect(sqls.some((s) => s.includes("USING GIN (metadata)"))).toBe(true);
   });
 
   it("upserts with a vector literal and jsonb metadata", async () => {
-    const { port, spy } = fakeQuery([ddl(), ddl(), ddl(), ddl(), ddl()]);
+    const { port, spy } = fakeQuery([...schema(3), ddl()]);
     const store = new PgVectorStore({ query: port, embeddingDim: 3 });
 
     await store.upsert([
@@ -148,10 +169,7 @@ describe("PgVectorStore", () => {
 
   it("searches by cosine distance and maps score = 1 - distance", async () => {
     const { port, spy } = fakeQuery([
-      ddl(),
-      ddl(),
-      ddl(),
-      ddl(),
+      ...schema(3),
       {
         rows: [{ id: "a:0", content: "hello", metadata: { sourceId: "a" }, score: 0.92 }],
         rowCount: 1,
@@ -176,13 +194,7 @@ describe("PgVectorStore", () => {
   });
 
   it("count() returns the row count and filters via jsonb containment", async () => {
-    const { port, spy } = fakeQuery([
-      ddl(),
-      ddl(),
-      ddl(),
-      ddl(),
-      { rows: [{ n: "7" }], rowCount: 1 },
-    ]);
+    const { port, spy } = fakeQuery([...schema(3), { rows: [{ n: "7" }], rowCount: 1 }]);
     const store = new PgVectorStore({ query: port, embeddingDim: 3 });
 
     const n = await store.count({ sourceId: "a" });
@@ -192,13 +204,32 @@ describe("PgVectorStore", () => {
   });
 
   it("deleteByMetadata returns the deleted row count", async () => {
-    const { port } = fakeQuery([ddl(), ddl(), ddl(), ddl(), { rows: [], rowCount: 3 }]);
+    const { port } = fakeQuery([...schema(3), { rows: [], rowCount: 3 }]);
     const store = new PgVectorStore({ query: port, embeddingDim: 3 });
     expect(await store.deleteByMetadata({ sourceId: "a" })).toBe(3);
   });
 
+  it("deleteByMetadata excludes keepIds via id != ALL", async () => {
+    const { port, spy } = fakeQuery([...schema(3), { rows: [], rowCount: 1 }]);
+    const store = new PgVectorStore({ query: port, embeddingDim: 3 });
+
+    const deleted = await store.deleteByMetadata({ sourceId: "a" }, ["a:0", "a:1"]);
+    expect(deleted).toBe(1);
+    const delCall = spy.mock.calls.find((c) => (c[0] as string).includes("DELETE FROM"));
+    const [sql, params] = delCall!;
+    expect(sql as string).toContain("id != ALL($2::text[])");
+    expect((params as unknown[])[1]).toEqual(["a:0", "a:1"]);
+  });
+
+  it("fails loud when the stored column dim differs from the configured dim", async () => {
+    // atttypmod reports VECTOR(5) but the store is configured for dim 3.
+    const { port } = fakeQuery([ddl(), ddl(), { rows: [{ atttypmod: 5 }], rowCount: 1 }]);
+    const store = new PgVectorStore({ query: port, embeddingDim: 3 });
+    await expect(store.count()).rejects.toThrow(/VECTOR\(5\).*configured embeddingDim is 3/);
+  });
+
   it("rejects an embedding whose dim does not match the configured dim", async () => {
-    const { port } = fakeQuery([ddl(), ddl(), ddl(), ddl()]);
+    const { port } = fakeQuery([...schema(1024)]);
     const store = new PgVectorStore({ query: port, embeddingDim: 1024 });
     await expect(store.search([0.1, 0.2], 5)).rejects.toThrow(
       /embedding dim 2 does not match configured 1024/,

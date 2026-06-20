@@ -41,13 +41,18 @@ export function parseHtml(html: string, source: Source, fetchedAt: Date): Parsed
   const links: string[] = [];
   scope.find("a[href]").each((_, el) => {
     const href = $(el).attr("href");
-    if (href && !href.startsWith("#") && !href.startsWith("javascript:")) {
-      try {
-        const resolved = new URL(href, source.url).toString();
-        links.push(resolved);
-      } catch {
-        // skip malformed URLs
+    if (!href || href.startsWith("#")) return;
+    try {
+      const resolved = new URL(href, source.url);
+      // Allowlist safe schemes on the RESOLVED url. Blocklisting `javascript:`
+      // alone is incomplete — `data:`, `vbscript:`, mixed-case (`JavaScript:`),
+      // and whitespace-padded variants all slip a substring check; resolving
+      // first and gating on the normalized protocol closes all of them.
+      if (resolved.protocol === "http:" || resolved.protocol === "https:") {
+        links.push(resolved.toString());
       }
+    } catch {
+      // skip malformed URLs
     }
   });
 

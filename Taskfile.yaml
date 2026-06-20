@@ -57,9 +57,9 @@ tasks:
       - npm run format:check
 
   test:
-    desc: Run the test suite
+    desc: Run the test suite with coverage thresholds
     cmds:
-      - npm test
+      - npm run test:coverage
 
   # === Helm ===
 

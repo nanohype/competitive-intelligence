@@ -51,8 +51,10 @@ resources:
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 1000
+  # Matches the image's named `app` user (UID 1001, Dockerfile). A mismatch here
+  # leaves the process unable to read files owned by the image user.
+  runAsUser: 1001
+  fsGroup: 1001
   seccompProfile:
     type: RuntimeDefault
 
@@ -151,6 +153,16 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
+    # OTLP traces + metrics to the cluster OTel Collector
+    # (otel-collector.observability.svc.cluster.local:4318). Without this rule
+    # the default-deny policy drops every span and metric the app emits.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4318
 
 env:
   # Non-secret configuration. Secrets (Slack tokens, optional provider keys,
@@ -158,9 +170,11 @@ env:
   AWS_REGION: us-west-2
   LLM_PROVIDER: bedrock
   EMBEDDING_PROVIDER: bedrock
-  # Sonnet default tier per llm-policy. Verify model availability in region
-  # before promoting — cross-region inference profiles differ by region.
-  BEDROCK_LLM_MODEL: anthropic.claude-sonnet-4-6
+  # Cross-region Claude Sonnet inference profile (Converse requires the
+  # us.anthropic.*-v1:0 profile form, not a bare alias). Matches the config.ts
+  # default. Verify the profile exists in the deploy region before promoting and
+  # bump to the current Sonnet snapshot when rolling regions.
+  BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-4-20250514-v1:0
   BEDROCK_EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
   EMBEDDING_DIMENSIONS: "1024"
   # Durable vector store — survives restarts so the first post-restart crawl
@@ -176,12 +190,18 @@ env:
   NODE_ENV: production
   # OTel — exports to the cluster-level Collector (otel-collector.observability.svc)
   # provisioned by eks-gitops. No per-pod sidecar.
+  # Telemetry is initialized once, by the Dockerfile's
+  # `--require @opentelemetry/auto-instrumentations-node/register` preload, so
+  # all export config is env-driven here (no programmatic SDK in app code).
   OTEL_SERVICE_NAME: competitive-intelligence
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_TRACES_SAMPLER: always_on
+  OTEL_TRACES_EXPORTER: otlp
   OTEL_METRICS_EXPORTER: otlp
   OTEL_METRIC_EXPORT_INTERVAL: "60000"
+  # fs spans are noise for a long-lived crawler — drop them at the preload.
+  OTEL_NODE_DISABLED_INSTRUMENTATIONS: fs
   # Resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT.
   OTEL_RESOURCE_ATTRIBUTES: "service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=protohype,agents.platform=competitive-intelligence"
 

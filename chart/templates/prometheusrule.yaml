@@ -2,9 +2,12 @@
 # Alert rules for the competitive-intelligence radar. Metric names target the
 # OTel-exported metrics as they arrive in Mimir — the app emits via its OTel
 # metrics surface (counters + histograms over @opentelemetry/api), and the
-# cluster-level OTel Collector ships them to Mimir. The OTel service.name
-# `competitive-intelligence` becomes the `competitive_intelligence_*` metric
-# prefix after the OTLP→Prometheus naming convention is applied.
+# cluster-level OTel Collector ships them to Mimir. The `competitive_intelligence_*`
+# prefix and the `deployment_environment` label come from the collector's
+# Prometheus pipeline (a `competitive_intelligence` namespace +
+# `resource_to_telemetry_conversion`), not the bare OTLP→Prometheus convention;
+# counters gain `_total` and histograms `_bucket` per that convention. The
+# collector config lives in eks-gitops — see chart/README.md § observability.
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

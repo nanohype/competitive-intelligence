@@ -4,6 +4,15 @@ import { createRegistry } from "./registry.js";
 import type { Config } from "../config.js";
 import { CircuitBreaker } from "../resilience/circuit-breaker.js";
 
+// Hard deadlines for every embedding call — embeddings run sequentially on the
+// single-writer crawl path, so a hung call stalls the whole crawl. See llm.ts.
+const EMBED_TIMEOUT_MS = 30_000;
+const EMBED_CONNECT_TIMEOUT_MS = 5_000;
+
+// OpenAI's embeddings endpoint caps array length + total tokens per request, so
+// a large page must be sent in windows rather than one call.
+const OPENAI_EMBED_BATCH = 256;
+
 export interface EmbeddingProvider {
   embed(texts: string[]): Promise<number[][]>;
   dimensions: number;
@@ -20,7 +29,14 @@ class BedrockEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
 
   constructor(region: string, modelId: string, dimensions: number) {
-    this.client = new BedrockRuntimeClient({ region });
+    this.client = new BedrockRuntimeClient({
+      region,
+      maxAttempts: 3,
+      requestHandler: {
+        connectionTimeout: EMBED_CONNECT_TIMEOUT_MS,
+        requestTimeout: EMBED_TIMEOUT_MS,
+      },
+    });
     this.modelId = modelId;
     this.dimensions = dimensions;
   }
@@ -41,6 +57,7 @@ class BedrockEmbeddingProvider implements EmbeddingProvider {
               normalize: true,
             }),
           }),
+          { abortSignal: AbortSignal.timeout(EMBED_TIMEOUT_MS) },
         );
         const body = JSON.parse(new TextDecoder().decode(response.body));
         return body.embedding as number[];
@@ -60,20 +77,28 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private model: string;
 
   constructor(apiKey: string, model: string, dimensions: number) {
-    this.client = new OpenAI({ apiKey });
+    this.client = new OpenAI({ apiKey, timeout: EMBED_TIMEOUT_MS, maxRetries: 2 });
     this.model = model;
     this.dimensions = dimensions;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
-    return this.breaker.execute(async () => {
-      const response = await this.client.embeddings.create({
-        model: this.model,
-        input: texts,
-        dimensions: this.dimensions,
+    // Window the inputs — a single large page can exceed OpenAI's per-request
+    // array/token caps, which would 400 the whole crawl's embedding.
+    const all: number[][] = [];
+    for (let i = 0; i < texts.length; i += OPENAI_EMBED_BATCH) {
+      const window = texts.slice(i, i + OPENAI_EMBED_BATCH);
+      const batch = await this.breaker.execute(async () => {
+        const response = await this.client.embeddings.create({
+          model: this.model,
+          input: window,
+          dimensions: this.dimensions,
+        });
+        return response.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
       });
-      return response.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
-    });
+      all.push(...batch);
+    }
+    return all;
   }
 }
 

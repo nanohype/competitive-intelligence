@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import type { Config } from "../config.js";
 import { createRegistry } from "./registry.js";
 import { logger } from "../logger.js";
+import { recordPgVectorError } from "../metrics.js";
 
 export interface VectorDocument {
   id: string;
@@ -25,7 +27,14 @@ export interface VectorStore {
     filter?: Record<string, string>,
   ): Promise<SearchResult[]>;
   delete(ids: string[]): Promise<void>;
-  deleteByMetadata(filter: Record<string, string>): Promise<number>;
+  /**
+   * Delete every chunk matching `filter`, optionally excluding ids in
+   * `keepIds`. The exclusion lets the pipeline upsert-then-prune: write the new
+   * chunks first, then drop only the stale ones, so a failed write never leaves
+   * a source with zero history (which the cold-start guard would silently
+   * re-baseline). Returns the number of rows deleted.
+   */
+  deleteByMetadata(filter: Record<string, string>, keepIds?: string[]): Promise<number>;
   count(filter?: Record<string, string>): Promise<number>;
 }
 
@@ -81,9 +90,11 @@ class MemoryVectorStore implements VectorStore {
     for (const id of ids) this.docs.delete(id);
   }
 
-  async deleteByMetadata(filter: Record<string, string>): Promise<number> {
+  async deleteByMetadata(filter: Record<string, string>, keepIds?: string[]): Promise<number> {
+    const keep = keepIds ? new Set(keepIds) : undefined;
     let deleted = 0;
     for (const [id, doc] of this.docs) {
+      if (keep?.has(id)) continue;
       if (matchesFilter(doc.metadata, filter)) {
         this.docs.delete(id);
         deleted++;
@@ -183,12 +194,27 @@ export class PgVectorStore implements VectorStore {
          metadata  JSONB NOT NULL DEFAULT '{}'::jsonb
        )`,
     );
-    // IVFFlat over cosine distance — good recall/build-cost balance for
-    // <~1M rows. For larger sets switch to HNSW (`USING hnsw`).
+    // Fail loud on a dimension mismatch. CREATE TABLE IF NOT EXISTS silently
+    // no-ops against an existing table, so an EMBEDDING_DIMENSIONS change would
+    // otherwise surface only as a confusing late insert failure. atttypmod on a
+    // pgvector column is its configured dimension.
+    const { rows } = await this.query.query<{ atttypmod: number }>(
+      `SELECT atttypmod FROM pg_attribute
+       WHERE attrelid = $1::regclass AND attname = 'embedding'`,
+      [this.table],
+    );
+    const existingDim = rows[0]?.atttypmod;
+    if (typeof existingDim === "number" && existingDim > 0 && existingDim !== this.embeddingDim) {
+      throw new Error(
+        `pgvector: table ${this.table} has VECTOR(${existingDim}) but configured embeddingDim is ${this.embeddingDim} — drop/migrate the table or fix EMBEDDING_DIMENSIONS`,
+      );
+    }
+    // HNSW over cosine distance — builds incrementally and needs no populated
+    // table, so it avoids IVFFlat's empty-table centroid pitfall (lists are
+    // meaningless with zero rows). Fits the small, slowly-growing source set.
     await this.query.query(
       `CREATE INDEX IF NOT EXISTS ${this.table}_embedding_idx
-         ON ${this.table} USING ivfflat (embedding vector_cosine_ops)
-         WITH (lists = 100)`,
+         ON ${this.table} USING hnsw (embedding vector_cosine_ops)`,
     );
     // GIN over the metadata jsonb so `@>` containment filters stay on index.
     await this.query.query(
@@ -259,8 +285,16 @@ export class PgVectorStore implements VectorStore {
     await this.query.query(`DELETE FROM ${this.table} WHERE id = ANY($1::text[])`, [ids]);
   }
 
-  async deleteByMetadata(filter: Record<string, string>): Promise<number> {
+  async deleteByMetadata(filter: Record<string, string>, keepIds?: string[]): Promise<number> {
     await this.ensureSchema();
+    if (keepIds && keepIds.length > 0) {
+      const { rowCount } = await this.query.query(
+        `DELETE FROM ${this.table}
+         WHERE metadata @> $1::jsonb AND id != ALL($2::text[])`,
+        [JSON.stringify(filter), keepIds],
+      );
+      return rowCount ?? 0;
+    }
     const { rowCount } = await this.query.query(
       `DELETE FROM ${this.table} WHERE metadata @> $1::jsonb`,
       [JSON.stringify(filter)],
@@ -294,15 +328,40 @@ export function bootstrapVectorStore(config: Config): VectorStore {
     // `pg` reads PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE from the
     // environment automatically when no connectionString is given, so an
     // unset DATABASE_URL still works against the Aurora-managed credentials.
-    // RDS/Aurora enforce TLS; `rejectUnauthorized: false` keeps the
-    // connection encrypted without bundling the RDS CA chain.
+    // TLS is verified: with a mounted RDS CA bundle (PG_CA_PATH) we pin to it;
+    // otherwise Node's built-in trust store validates the publicly-anchored RDS
+    // global CA. Either way the connection is encrypted AND authenticated.
+    const ssl = config.pgCaPath
+      ? { ca: readFileSync(config.pgCaPath, "utf8"), rejectUnauthorized: true }
+      : { rejectUnauthorized: true };
     const pool = new Pool({
       ...(config.databaseUrl ? { connectionString: config.databaseUrl } : {}),
       max: 5,
-      ssl: { rejectUnauthorized: false },
+      ssl,
+      // Bound every phase so a hung DB can't stall the single-writer crawl.
+      connectionTimeoutMillis: 5_000,
+      statement_timeout: 15_000,
+      query_timeout: 15_000,
+      idle_in_transaction_session_timeout: 30_000,
     });
-    pool.on("error", (err: Error) => logger.error("pgvector pool error", { error: err.message }));
-    return new PgVectorStore({ query: pool, embeddingDim: config.embeddingDimensions });
+    pool.on("error", (err: Error) => {
+      recordPgVectorError();
+      logger.error("pgvector pool error", { error: err.message });
+    });
+    // Count query-level failures too (Aurora failover, statement timeout) so the
+    // PgVectorUnreachable alert fires on more than just idle-client errors.
+    const query: PgQueryPort = {
+      async query<T = unknown>(text: string, values?: unknown[]): Promise<PgQueryResult<T>> {
+        try {
+          const result = await pool.query(text, values);
+          return { rows: result.rows as T[], rowCount: result.rowCount };
+        } catch (err) {
+          recordPgVectorError();
+          throw err;
+        }
+      },
+    };
+    return new PgVectorStore({ query, embeddingDim: config.embeddingDimensions });
   });
   return vectorRegistry.get(config.vectorProvider);
 }

@@ -1,7 +1,6 @@
-import { startTelemetry, stopTelemetry } from "./otel.js";
 import http from "node:http";
 import { loadConfig } from "./config.js";
-import { logger, setLogLevel } from "./logger.js";
+import { logger, setLogLevel, toMessage } from "./logger.js";
 import { bootstrapLlm } from "./providers/llm.js";
 import { bootstrapEmbeddings } from "./providers/embeddings.js";
 import { bootstrapVectorStore, type VectorStore } from "./providers/vectors.js";
@@ -12,7 +11,10 @@ import { createIntelEngine } from "./intel/index.js";
 import { createAlertEngine, type AlertSink } from "./alerts/index.js";
 import { createSlackBot } from "./slack/index.js";
 import { createScheduler } from "./scheduler/index.js";
-import { recordCrawlDuration, recordDiffsProcessed, recordAlertFired } from "./metrics.js";
+import { recordCrawlDuration } from "./metrics.js";
+
+/** Outcome of a crawl trigger, so callers (the slash command) can report honestly. */
+export type CrawlOutcome = "ran" | "skipped";
 
 /**
  * Tiny liveness/readiness server.
@@ -44,7 +46,7 @@ function createHealthServer(store: VectorStore): http.Server {
           res.end(
             JSON.stringify({
               status: "unready",
-              error: err instanceof Error ? err.message : String(err),
+              error: toMessage(err),
             }),
           );
         });
@@ -56,10 +58,12 @@ function createHealthServer(store: VectorStore): http.Server {
 }
 
 async function main(): Promise<void> {
-  // Start telemetry FIRST so auto-instrumentation patches http/fetch/aws-sdk
-  // before any client below is constructed.
-  startTelemetry();
-
+  // Telemetry is initialized by the Dockerfile's
+  // `--require @opentelemetry/auto-instrumentations-node/register` preload — it
+  // must load before any instrumented module is imported, which a call here
+  // (after the import graph is already resolved) cannot guarantee. All OTel
+  // config is env-driven (see the chart's OTEL_* env). Locally, telemetry is
+  // simply absent and the OTel API degrades to a no-op.
   logger.info("competitive-intelligence starting");
 
   // ─── Config ───
@@ -78,15 +82,15 @@ async function main(): Promise<void> {
   // Mutex prevents overlapping runs from scheduler + slash command racing.
   let crawlInProgress = false;
 
-  async function runCrawl(): Promise<void> {
+  async function runCrawl(): Promise<CrawlOutcome> {
     if (crawlInProgress) {
       logger.warn("crawl already in progress, skipping");
-      return;
+      return "skipped";
     }
 
     if (sources.length === 0) {
       logger.warn("no sources configured, skipping crawl");
-      return;
+      return "skipped";
     }
 
     crawlInProgress = true;
@@ -99,14 +103,14 @@ async function main(): Promise<void> {
 
       if (crawlResult.succeeded.length === 0) {
         logger.warn("all crawls failed, nothing to process");
-        return;
+        return "ran";
       }
 
+      // recordDiffsProcessed / recordAlertFired are emitted inside
+      // ingestAndDiff / the alert engine so the CLI path counts them too.
       const pipelineResult = await ingestAndDiff(crawlResult.succeeded, embedder, store);
-      recordDiffsProcessed(pipelineResult.diffs.length);
-
-      const analyses = await alertEngine.processDiffs(pipelineResult.diffs);
-      if (analyses.length > 0) recordAlertFired(analyses.length);
+      await alertEngine.processDiffs(pipelineResult.diffs);
+      return "ran";
     } finally {
       crawlInProgress = false;
       recordCrawlDuration(Date.now() - startedAt);
@@ -137,7 +141,10 @@ async function main(): Promise<void> {
     {
       name: "crawl",
       intervalMs: config.crawlIntervalMinutes * 60 * 1000,
-      fn: runCrawl,
+      // Discard the outcome — the scheduler job is fire-and-forget (void).
+      fn: async () => {
+        await runCrawl();
+      },
     },
   ]);
 
@@ -176,7 +183,8 @@ async function main(): Promise<void> {
     scheduler.stop();
     if (slackBot) await slackBot.stop();
     await new Promise<void>((resolve) => healthServer.close(() => resolve()));
-    await stopTelemetry();
+    // The auto-instrumentations preload registers its own SIGTERM/beforeExit
+    // flush, so there is no programmatic SDK to shut down here.
     process.exit(0);
   };
 
@@ -185,6 +193,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error("fatal", { error: err instanceof Error ? err.message : String(err) });
+  logger.error("fatal", { error: toMessage(err) });
   process.exit(1);
 });

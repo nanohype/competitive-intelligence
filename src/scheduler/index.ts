@@ -1,4 +1,4 @@
-import { logger } from "../logger.js";
+import { logger, toMessage } from "../logger.js";
 
 export interface ScheduledJob {
   name: string;
@@ -40,7 +40,7 @@ export function createScheduler(jobs: ScheduledJob[]): Scheduler {
             logger.error("job failed", {
               name: job.name,
               durationMs: Date.now() - start,
-              error: err instanceof Error ? err.message : String(err),
+              error: toMessage(err),
             });
           }
         }, job.intervalMs);

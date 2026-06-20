@@ -7,6 +7,8 @@
  * all failures since the last reset count equally regardless of age.
  */
 
+import { setCircuitBreakerOpen } from "../metrics.js";
+
 type State = "closed" | "open" | "half-open";
 
 export interface CircuitBreakerOptions {
@@ -70,11 +72,13 @@ export class CircuitBreaker {
 
   private trip(): void {
     this.state = "open";
+    setCircuitBreakerOpen(this.name, true);
   }
 
   private reset(): void {
     this.state = "closed";
     this.failures = 0;
     this.halfOpenAttempts = 0;
+    setCircuitBreakerOpen(this.name, false);
   }
 }

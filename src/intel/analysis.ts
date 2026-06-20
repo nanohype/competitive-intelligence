@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { LlmProvider } from "../providers/llm.js";
 import type { DiffResult } from "../pipeline/differ.js";
 import type { SearchResult } from "../providers/vectors.js";
@@ -9,6 +10,14 @@ export interface ChangeAnalysis {
   significance: "low" | "medium" | "high" | "critical";
   signals: string[];
 }
+
+// The model returns JSON — validate it at this trust boundary like every other
+// input (config, sources). Unknown shapes fall back to the raw-text branch.
+const analysisSchema = z.object({
+  summary: z.string().default("Analysis unavailable"),
+  significance: z.enum(["low", "medium", "high", "critical"]).catch("low"),
+  signals: z.array(z.string()).catch([]),
+});
 
 const ANALYSIS_SYSTEM = `You are a competitive intelligence analyst. You analyze changes detected on competitor websites and extract actionable intelligence signals.
 
@@ -25,7 +34,7 @@ Respond in JSON format:
 }`;
 
 /** Strip markdown code fences (```json ... ```) that LLMs often wrap around JSON. */
-function stripCodeFences(text: string): string {
+export function stripCodeFences(text: string): string {
   const trimmed = text.trim();
   const match = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
   return match ? match[1] : trimmed;
@@ -43,29 +52,37 @@ ${newContent.slice(0, 8000)}`;
 
   const response = await llm.chat(ANALYSIS_SYSTEM, prompt);
 
-  try {
-    const parsed = JSON.parse(stripCodeFences(response.text));
-    const validSignificance = ["low", "medium", "high", "critical"] as const;
-    const significance = validSignificance.includes(parsed.significance)
-      ? (parsed.significance as (typeof validSignificance)[number])
-      : "low";
-
+  const parsed = safeParseAnalysis(stripCodeFences(response.text));
+  if (parsed) {
     return {
       sourceId: diff.sourceId,
       competitor: diff.competitor,
-      summary: parsed.summary ?? "Analysis unavailable",
-      significance,
-      signals: Array.isArray(parsed.signals) ? parsed.signals : [],
-    };
-  } catch {
-    return {
-      sourceId: diff.sourceId,
-      competitor: diff.competitor,
-      summary: response.text.slice(0, 500),
-      significance: "low",
-      signals: [],
+      summary: parsed.summary,
+      significance: parsed.significance,
+      signals: parsed.signals,
     };
   }
+
+  // Not valid JSON — fall back to the raw model text as the summary.
+  return {
+    sourceId: diff.sourceId,
+    competitor: diff.competitor,
+    summary: response.text.slice(0, 500),
+    significance: "low",
+    signals: [],
+  };
+}
+
+/** Parse + validate the model's analysis JSON; null when it isn't JSON at all. */
+function safeParseAnalysis(text: string): z.infer<typeof analysisSchema> | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const result = analysisSchema.safeParse(json);
+  return result.success ? result.data : null;
 }
 
 // ─── Query answering ───

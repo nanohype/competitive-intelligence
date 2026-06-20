@@ -17,7 +17,7 @@ The system organizes around eight contexts. Cross-boundary services go through a
 | **scheduler**  | `src/scheduler/`  | `createScheduler` is a `setInterval`-based job runner. Runs one global crawl over all sources at `CRAWL_INTERVAL_MINUTES`. The crawl mutex (in `src/index.ts`) prevents the scheduler and a slash-command crawl from overlapping                                                         |
 | **resilience** | `src/resilience/` | `CircuitBreaker` — a threshold-based breaker used per-host by the fetcher and per-provider by the LLM/embeddings providers. Trip → fail fast → half-open probe → recover                                                                                                                 |
 
-Cross-cutting: `src/config.ts` (Zod env validation, fail-fast at boot), `src/logger.ts` (Pino JSON to stderr with OTel `trace_id`/`span_id` correlation), `src/metrics.ts` (OTel timing/counter surface), `src/cli.ts` (one-off `crawl`/`query`), `src/index.ts` (bootstrap + the `/health`+`/readyz` HTTP server).
+Cross-cutting: `src/config.ts` (Zod env validation, fail-fast at boot), `src/logger.ts` (hand-rolled structured JSON logging to stderr), `src/metrics.ts` (OTel timing/counter/gauge surface), `src/cli.ts` (one-off `crawl`/`query`) with `src/display.ts` (ANSI CLI presentation), `src/index.ts` (bootstrap + the `/health`+`/readyz` HTTP server). OTel is initialized by the Dockerfile's auto-instrumentations `--require` preload (env-driven config), not by app code.
 
 ## Key decisions
 
@@ -47,7 +47,7 @@ The analysis system prompt (`ANALYSIS_SYSTEM` in `src/intel/analysis.ts`) is ide
 
 The analysis system prompt is cached via a Converse `cachePoint` marker placed after the system block (and after any stable context prefix). Because that prefix is byte-identical across every diff analyzed within the cache TTL, the second and subsequent analyses in a crawl batch read the prompt from cache rather than re-billing it as input tokens.
 
-Cache effectiveness is **measured, not assumed**. The provider records Bedrock token usage split by kind, emitted as `bedrock.tokens{kind}` with `kind ∈ {input, output, cache_read, cache_write}`. The cache-hit ratio is `cache_read / (cache_read + cache_write)` over a window — high on a warm radar (the system prompt is reused across every source in a crawl) and zero only on the first analysis after a cache expiry. The Grafana dashboard plots the ratio and the token split; the LLM policy requires both the `cachePoint` marker and a measured ratio, which the metric satisfies.
+Cache effectiveness is **measured, not assumed**. `BedrockLlmProvider.chat` records token usage from every Converse response as four distinct counters — `bedrock.input_tokens`, `bedrock.output_tokens`, `bedrock.cache_read_tokens`, `bedrock.cache_write_tokens` (exported to Mimir as `competitive_intelligence_bedrock_*_tokens_total`). The cache-hit ratio is `cache_read / (cache_read + cache_write)` over a window — high on a warm radar (the system prompt is reused across every source in a crawl) and zero only on the first analysis after a cache expiry. The Grafana dashboard plots the ratio and the token split; the LLM policy requires both the `cachePoint` marker and a measured ratio, which the metric satisfies.
 
 ## Data flow: a single crawl
 
@@ -60,7 +60,8 @@ Cache effectiveness is **measured, not assumed**. The provider records Bedrock t
       b. embed chunks (Bedrock Titan, default)
       c. semantic diff: each chunk vs best same-source match (cosine < 0.85 → new)
          → cold-start guard: source count()==0 → baseline (ingest, suppress alerts)
-      d. replace history: deleteByMetadata(sourceId) → upsert new chunks
+      d. replace history: upsert new chunks → prune stale (deleteByMetadata, keeping new ids)
+         — ordered so a mid-write failure can't wipe a source's history
 5.  alertEngine.processDiffs(diffs): per diff with changeScore ≥ SIGNIFICANCE_THRESHOLD →
       a. LLM analysis (Bedrock Converse, cached system prompt) → summary + significance + signals
       b. format Block Kit → dispatch to the Slack alert sink (#competitive-intel)

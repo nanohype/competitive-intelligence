@@ -36,6 +36,20 @@ describe("guardUrl", () => {
     },
   );
 
+  it.each([
+    "http://[::ffff:127.0.0.1]/", // mapped loopback
+    "http://[::ffff:169.254.169.254]/latest/meta-data/", // mapped AWS metadata
+    "http://[::ffff:10.0.0.1]/", // mapped RFC1918
+    "http://[::ffff:192.168.1.1]/", // mapped RFC1918
+  ])("rejects IPv4-mapped IPv6 that embeds a blocked address %s", async (url) => {
+    await expect(guardUrl(url)).rejects.toThrow(/blocked address/);
+  });
+
+  it("still accepts an IPv4-mapped IPv6 wrapping a public address", async () => {
+    // ::ffff:93.184.216.34 (example.com) — mapped, but public, so allowed.
+    await expect(guardUrl("http://[::ffff:93.184.216.34]/")).resolves.toBeInstanceOf(URL);
+  });
+
   it("rejects malformed URLs", async () => {
     await expect(guardUrl("not a url")).rejects.toThrow(/malformed URL/);
   });

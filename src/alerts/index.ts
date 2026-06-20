@@ -3,7 +3,8 @@ import type { LlmProvider } from "../providers/llm.js";
 import type { Config } from "../config.js";
 import { analyzeChanges, type ChangeAnalysis } from "../intel/analysis.js";
 import { formatAlert, type SlackBlocks } from "./formatter.js";
-import { logger } from "../logger.js";
+import { logger, toMessage } from "../logger.js";
+import { recordAlertSendFailure, recordAlertFired } from "../metrics.js";
 
 export interface AlertSink {
   send(channel: string, message: SlackBlocks): Promise<void>;
@@ -42,15 +43,17 @@ export function createAlertEngine(llm: LlmProvider, sink: AlertSink, config: Con
         const message = formatAlert(analysis);
         try {
           await sink.send(config.slackAlertChannel, message);
+          recordAlertFired();
           logger.info("alert sent", {
             sourceId: analysis.sourceId,
             significance: analysis.significance,
             channel: config.slackAlertChannel,
           });
         } catch (err) {
+          recordAlertSendFailure(analysis.sourceId);
           logger.error("alert send failed", {
             sourceId: analysis.sourceId,
-            error: err instanceof Error ? err.message : String(err),
+            error: toMessage(err),
           });
         }
       }

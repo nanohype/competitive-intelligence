@@ -43,9 +43,17 @@ describe("chunkText", () => {
   it("applies overlap between chunks", () => {
     const text = "AAAA\n\nBBBB\n\nCCCC";
     const chunks = chunkText(text, { ...opts, maxChunkSize: 10, overlap: 4 });
-    if (chunks.length > 1) {
-      // Second chunk should start with tail of first chunk
-      expect(chunks[1].text.length).toBeGreaterThan(0);
-    }
+    // Segments split to ["AAAA\n\nBBBB", "CCCC"]; chunk[1] is prefixed with the
+    // last `overlap` (4) chars of the previous segment ("BBBB").
+    expect(chunks).toHaveLength(2);
+    expect(chunks[1].text).toBe("BBBBCCCC");
+    expect(chunks[1].text.startsWith("BBBB")).toBe(true);
+  });
+
+  it("omits overlap when overlap is 0", () => {
+    const text = "AAAA\n\nBBBB\n\nCCCC";
+    const chunks = chunkText(text, { ...opts, maxChunkSize: 10, overlap: 0 });
+    expect(chunks).toHaveLength(2);
+    expect(chunks[1].text).toBe("CCCC");
   });
 });
