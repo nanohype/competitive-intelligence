@@ -14,8 +14,8 @@ On-call reference for the `competitive-intelligence` Platform tenant. Pairs with
   LLM + embeddings via IRSA.
 - **Probes:** `/health` (liveness), `/readyz` (readiness — fails when the vector
   store is unreachable). HTTP server on `PORT` regardless of Slack transport.
-- **Logs:** structured JSON to stderr → cluster log forwarder → Grafana Cloud Loki.
-- **Telemetry:** OTLP traces + metrics → `otel-collector.observability` → Tempo + Mimir.
+- **Logs:** structured JSON to stderr → cluster log forwarder → Loki.
+- **Telemetry:** OTLP traces + metrics → `grafana-agent.monitoring` → Tempo + AMP.
 
 ## Dashboards
 

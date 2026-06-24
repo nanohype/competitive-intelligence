@@ -18,7 +18,7 @@ The workload is a single long-lived worker: a scheduler that runs one global cra
   - `externalsecret.yaml` — pulls Slack tokens + optional provider keys from `competitive-intelligence/<env>/app-secrets` and `PGUSER`/`PGPASSWORD` from `competitive-intelligence/<env>/db-credentials`
   - `networkpolicy.yaml` — thin `tenant-chart-base.networkpolicy` include; default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR); ingress is same-namespace probes only
   - `prometheusrule.yaml` — alerts (crawl-failure spike, circuit-breaker open, alert-send failure, pgvector unreachable); uses the base chart's fullname/labels helpers
-  - `grafana-dashboard.yaml` — thin `tenant-chart-base` include rendering a ConfigMap (labeled `grafana_dashboard: "1"`) from `dashboards/competitive-intelligence.json`
+  - `grafana-dashboard.yaml` — thin `tenant-chart-base` include rendering a `GrafanaDashboard` CR (instanceSelector `dashboards: external`) from `dashboards/competitive-intelligence.json`, reconciled by the grafana-operator onto Amazon Managed Grafana
 
 ## Dependencies
 
@@ -75,12 +75,12 @@ This chart owns the app's k8s surface. The cloud substrate and cluster addons si
 
 **Substrate (`landing-zone/components/aws/competitive-intelligence-platform/`):** Aurora Serverless v2 (pgvector), the IRSA role, and the seeded Secrets Manager entries. Its `irsa_role_arn` output feeds `aws.platformRoleArn`; `aurora_cluster_endpoint` feeds `tenantInfra.pgHost`. AWS Secrets Manager stays the source of truth; `externalsecret.yaml` syncs it into a k8s Secret via ESO.
 
-**Cluster addons (`eks-gitops`):** the external-secrets operator + `aws-secrets-manager` ClusterSecretStore, the OTel Collector at `otel-collector.observability.svc.cluster.local:4318`, the cluster log forwarder, kube-prometheus-stack, and Alertmanager. The app writes structured JSON to stderr → cluster log forwarder → Loki, and exports OTLP traces + metrics to the cluster collector → Tempo + Mimir. No per-pod sidecars.
+**Cluster addons (`eks-gitops`):** the external-secrets operator + `aws-secrets-manager` ClusterSecretStore, the grafana-agent (Alloy) OTLP receiver at `grafana-agent.monitoring.svc.cluster.local:4318` and the grafana-operator (→ Amazon Managed Grafana). The app writes structured JSON to stderr (tailed to Loki) and exports OTLP traces + metrics + logs to grafana-agent, which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecars.
 
 **This chart:** the worker `Deployment`, the default-deny `networkpolicy.yaml`, the `externalsecret.yaml`, plus the observability that ships here rather than in eks-gitops:
 
 - `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alerts. Alertmanager (eks-gitops) routes them.
-- `grafana-dashboard.yaml` — a ConfigMap labeled `grafana_dashboard: "1"` loading the dashboard from `chart/dashboards/competitive-intelligence.json`; the Grafana sidecar picks it up automatically.
+- `grafana-dashboard.yaml` — a `GrafanaDashboard` CR loading the dashboard from `chart/dashboards/competitive-intelligence.json`; the grafana-operator reconciles it onto the external Amazon Managed Grafana.
 
 > **Collector requirement (eks-gitops).** The rules and dashboard query the
 > `competitive_intelligence_*` series with a `deployment_environment` label. That

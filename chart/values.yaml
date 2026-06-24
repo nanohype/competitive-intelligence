@@ -104,9 +104,14 @@ prometheusRule:
     release: kube-prometheus-stack
 
 grafanaDashboard:
-  # Uses the grafana_dashboard sidecar pattern — Grafana auto-imports any
-  # ConfigMap with `grafana_dashboard: "1"` label.
+  # Shipped as a GrafanaDashboard CR the grafana-operator reconciles onto the
+  # external Amazon Managed Grafana — the same delivery path the platform
+  # dashboards use (the operator runs on both EKS and the local kx cluster).
   enabled: true
+  instanceSelector:
+    dashboards: external
+  allowCrossNamespaceImport: true
+  resyncPeriod: 24h
 
 networkPolicy:
   enabled: true
@@ -153,13 +158,13 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
-    # OTLP traces + metrics to the cluster OTel Collector
-    # (otel-collector.observability.svc.cluster.local:4318). Without this rule
-    # the default-deny policy drops every span and metric the app emits.
+    # OTLP traces + metrics + logs to the grafana-agent OTLP receiver in the
+    # monitoring namespace (grafana-agent.monitoring.svc.cluster.local:4318).
+    # Without this rule the default-deny policy drops every span/metric/log.
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: observability
+              kubernetes.io/metadata.name: monitoring
       ports:
         - protocol: TCP
           port: 4318
@@ -188,13 +193,13 @@ env:
   USER_AGENT: competitive-intelligence/0.1.0
   PORT: "3000"
   NODE_ENV: production
-  # OTel — exports to the cluster-level Collector (otel-collector.observability.svc)
-  # provisioned by eks-gitops. No per-pod sidecar.
+  # OTel — exports to the grafana-agent OTLP receiver in the monitoring namespace,
+  # which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecar.
   # Telemetry is initialized once, by the Dockerfile's
   # `--require @opentelemetry/auto-instrumentations-node/register` preload, so
   # all export config is env-driven here (no programmatic SDK in app code).
   OTEL_SERVICE_NAME: competitive-intelligence
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc.cluster.local:4318
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana-agent.monitoring.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_TRACES_SAMPLER: always_on
   OTEL_TRACES_EXPORTER: otlp
