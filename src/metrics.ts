@@ -16,8 +16,8 @@
  * Metric names map to the `competitive_intelligence_*` series the chart's Grafana
  * dashboard and PrometheusRule query: an OTel instrument named `crawl.failures`
  * (a counter) arrives in AMP as `competitive_intelligence_crawl_failures_total`
- * after the OTLP→Prometheus naming convention + the collector's service-name
- * namespace are applied. Keep instrument names in sync with the chart.
+ * after this module's NAMESPACE prefix + the OTLP→Prometheus naming convention
+ * are applied. Keep instrument names in sync with the chart.
  *
  * When no meter provider is registered (tests, CI, or any run with
  * `OTEL_SDK_DISABLED=true`), the OTel API degrades to a no-op. That's
@@ -34,13 +34,21 @@ import {
 
 const METER_NAME = "competitive-intelligence";
 
+// Self-prefix every instrument with the service namespace so the Prometheus
+// series are deterministic — `crawl.sources` becomes
+// `competitive_intelligence_crawl_sources_total` purely from the instrument name
+// (OTLP→Prometheus lowercases dots/dashes to underscores + adds the _total
+// suffix), with no dependency on a collector-side namespace rewrite.
+const NAMESPACE = "competitive_intelligence";
+const qualify = (name: string): string => `${NAMESPACE}.${name}`;
+
 const counters = new Map<string, Counter>();
 const histograms = new Map<string, Histogram>();
 
 function getCounter(name: string): Counter {
   let c = counters.get(name);
   if (!c) {
-    c = otelMetrics.getMeter(METER_NAME).createCounter(name);
+    c = otelMetrics.getMeter(METER_NAME).createCounter(qualify(name));
     counters.set(name, c);
   }
   return c;
@@ -51,7 +59,7 @@ function getHistogram(name: string, unit: string, boundaries?: number[]): Histog
   if (!h) {
     const opts: { unit: string; advice?: { explicitBucketBoundaries: number[] } } = { unit };
     if (boundaries) opts.advice = { explicitBucketBoundaries: boundaries };
-    h = otelMetrics.getMeter(METER_NAME).createHistogram(name, opts);
+    h = otelMetrics.getMeter(METER_NAME).createHistogram(qualify(name), opts);
     histograms.set(name, h);
   }
   return h;
@@ -156,7 +164,7 @@ let breakerGauge: ObservableGauge | undefined;
 export function setCircuitBreakerOpen(name: string, open: boolean): void {
   breakerOpen.set(name, open ? 1 : 0);
   if (!breakerGauge) {
-    breakerGauge = otelMetrics.getMeter(METER_NAME).createObservableGauge("circuit_breaker.open");
+    breakerGauge = otelMetrics.getMeter(METER_NAME).createObservableGauge(qualify("circuit_breaker.open"));
     breakerGauge.addCallback((result: ObservableResult) => {
       for (const [target, value] of breakerOpen) {
         result.observe(value, { target });
