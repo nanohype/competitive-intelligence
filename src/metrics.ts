@@ -164,7 +164,9 @@ let breakerGauge: ObservableGauge | undefined;
 export function setCircuitBreakerOpen(name: string, open: boolean): void {
   breakerOpen.set(name, open ? 1 : 0);
   if (!breakerGauge) {
-    breakerGauge = otelMetrics.getMeter(METER_NAME).createObservableGauge(qualify("circuit_breaker.open"));
+    breakerGauge = otelMetrics
+      .getMeter(METER_NAME)
+      .createObservableGauge(qualify("circuit_breaker.open"));
     breakerGauge.addCallback((result: ObservableResult) => {
       for (const [target, value] of breakerOpen) {
         result.observe(value, { target });
