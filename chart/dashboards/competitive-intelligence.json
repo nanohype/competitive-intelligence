@@ -1,7 +1,10 @@
 {
   "uid": "competitive-intelligence",
   "title": "Competitive Intelligence",
-  "tags": ["protohype", "competitive-intelligence"],
+  "tags": [
+    "protohype",
+    "competitive-intelligence"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "30s",
@@ -37,10 +40,172 @@
   },
   "panels": [
     {
-      "id": 1,
-      "title": "Crawl — duration p50 / p95 / p99",
+      "type": "row",
+      "title": "SLO \u2014 crawl availability (99% over 30d)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Availability (30d)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Crawl success ratio over 30d vs the 99% objective. Good/bad = crawl_sources_total{outcome}.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.99
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "1 - (sum(rate(competitive_intelligence_crawl_sources_total{outcome=\"failed\",deployment_environment=\"$environment\"}[30d])) / clamp_min(sum(rate(competitive_intelligence_crawl_sources_total{deployment_environment=\"$environment\"}[30d])), 1))"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Error budget remaining (30d)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Fraction of the 30-day 1% error budget still unspent. Inline \u2014 no recording rule.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.25
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "clamp_min(1 - ((sum(rate(competitive_intelligence_crawl_sources_total{outcome=\"failed\",deployment_environment=\"$environment\"}[30d])) / clamp_min(sum(rate(competitive_intelligence_crawl_sources_total{deployment_environment=\"$environment\"}[30d])), 1)) / 0.01), 0)"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      }
+    },
+    {
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "title": "Error-budget burn rate (\u00d7objective)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Burn rate = error_ratio / (1 - objective). >1 means burning the budget faster than sustainable; pages at 14.4\u00d7 (1h) / 6\u00d7 (6h).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "(sum(rate(competitive_intelligence_crawl_sources_total{outcome=\"failed\",deployment_environment=\"$environment\"}[1h])) / clamp_min(sum(rate(competitive_intelligence_crawl_sources_total{deployment_environment=\"$environment\"}[1h])), 1)) / 0.01",
+          "legendFormat": "1h"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "(sum(rate(competitive_intelligence_crawl_sources_total{outcome=\"failed\",deployment_environment=\"$environment\"}[6h])) / clamp_min(sum(rate(competitive_intelligence_crawl_sources_total{deployment_environment=\"$environment\"}[6h])), 1)) / 0.01",
+          "legendFormat": "6h"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      }
+    },
+    {
+      "id": 1,
+      "title": "Crawl \u2014 duration p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum by (le) (rate(competitive_intelligence_crawl_duration_ms_bucket{deployment_environment=\"$environment\"}[5m])))",
@@ -58,13 +223,22 @@
           "refId": "C"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "ms"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
     },
     {
       "id": 2,
-      "title": "Crawl — sources by outcome",
+      "title": "Crawl \u2014 sources by outcome",
       "type": "timeseries",
-      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum by (outcome) (rate(competitive_intelligence_crawl_sources_total{deployment_environment=\"$environment\"}[5m]))",
@@ -72,13 +246,22 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "ops"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
     },
     {
       "id": 3,
-      "title": "Pipeline — chunks vs diffs processed",
+      "title": "Pipeline \u2014 chunks vs diffs processed",
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum(rate(competitive_intelligence_chunks_processed_total{deployment_environment=\"$environment\"}[5m]))",
@@ -91,13 +274,22 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "ops"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
     },
     {
       "id": 4,
-      "title": "Change score — p50 / p95",
+      "title": "Change score \u2014 p50 / p95",
       "type": "timeseries",
-      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum by (le) (rate(competitive_intelligence_change_score_bucket{deployment_environment=\"$environment\"}[15m])))",
@@ -110,13 +302,24 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "none", "min": 0, "max": 1}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1
+        }
+      }
     },
     {
       "id": 5,
-      "title": "Alerts — fired vs send failures",
+      "title": "Alerts \u2014 fired vs send failures",
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum(rate(competitive_intelligence_alerts_fired_total{deployment_environment=\"$environment\"}[5m]))",
@@ -129,13 +332,35 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "ops", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 6,
-      "title": "Bedrock — tokens per second (in / out)",
+      "title": "Bedrock \u2014 tokens per second (in / out)",
       "type": "timeseries",
-      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum(rate(competitive_intelligence_bedrock_input_tokens_total{deployment_environment=\"$environment\"}[5m]))",
@@ -148,13 +373,22 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "ops"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
     },
     {
       "id": 7,
-      "title": "Prompt cache — hit ratio",
+      "title": "Prompt cache \u2014 hit ratio",
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum(rate(competitive_intelligence_bedrock_cache_read_tokens_total{deployment_environment=\"$environment\"}[5m])) / clamp_min(sum(rate(competitive_intelligence_bedrock_cache_read_tokens_total{deployment_environment=\"$environment\"}[5m])) + sum(rate(competitive_intelligence_bedrock_cache_write_tokens_total{deployment_environment=\"$environment\"}[5m])), 1)",
@@ -162,13 +396,24 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      }
     },
     {
       "id": 8,
-      "title": "Resilience — circuit breakers open & pgvector errors",
+      "title": "Resilience \u2014 circuit breakers open & pgvector errors",
       "type": "timeseries",
-      "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "max by (target) (competitive_intelligence_circuit_breaker_open{deployment_environment=\"$environment\"})",
@@ -181,7 +426,24 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
     }
   ]
 }

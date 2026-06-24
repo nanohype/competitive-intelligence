@@ -4,7 +4,7 @@
  * Exports OTLP to the cluster OTel Collector. The meter provider is installed by
  * the Dockerfile's `--require @opentelemetry/auto-instrumentations-node/register`
  * preload (env-driven); the chart points it at
- * `otel-collector.observability.svc.cluster.local:4318` → Grafana Cloud Mimir.
+ * `grafana-agent.monitoring.svc.cluster.local:4318` → AMP.
  *
  * Generic call-site helpers — `timing` (ms histogram), `distribution` (unitless
  * histogram) and `counter` (monotonic counter) — back named convenience wrappers
@@ -15,7 +15,7 @@
  *
  * Metric names map to the `competitive_intelligence_*` series the chart's Grafana
  * dashboard and PrometheusRule query: an OTel instrument named `crawl.failures`
- * (a counter) arrives in Mimir as `competitive_intelligence_crawl_failures_total`
+ * (a counter) arrives in AMP as `competitive_intelligence_crawl_failures_total`
  * after the OTLP→Prometheus naming convention + the collector's service-name
  * namespace are applied. Keep instrument names in sync with the chart.
  *
