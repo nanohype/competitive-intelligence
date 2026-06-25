@@ -10,7 +10,7 @@ A competitive-intelligence radar. It crawls competitor marketing/docs/pricing pa
 
 The load-bearing property is that **history is durable**. Embeddings live in pgvector (Aurora), so a pod restart, rollout, or node drain diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any source whose stored vector count is zero is treated as baseline seeding (ingest + embed, no alerts), so a genuine first deploy or an empty backend doesn't flood the channel.
 
-It's built around a provider-registry seam. LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config; `src/index.ts` is the one place real SDK clients are constructed and wired. Bedrock is the default for both LLM (Converse) and embeddings (Titan) — on the cluster the AWS credential chain resolves to IRSA, so there are no keys. Anthropic and OpenAI stay as pluggable alternates.
+It's built around a provider-registry seam. LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config; `src/index.ts` is the one place real SDK clients are constructed and wired. Bedrock is the default for both LLM (Converse) and embeddings (Titan) — on the cluster the AWS credential chain resolves to the pod's IAM role via EKS Pod Identity, so there are no keys. Anthropic and OpenAI stay as pluggable alternates.
 
 ## Run it in five minutes
 
@@ -71,7 +71,7 @@ spec:
   isolation: namespace
 ```
 
-The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, and ArgoCD AppProject. **The app pods assume the landing-zone `competitive-intelligence-platform` IRSA role directly** via the chart's `aws.platformRoleArn` Helm value — that's why `extraPolicyArns` stays empty. The tenant boundary (`tenant: protohype`, namespace `tenants-protohype`, project `tenant-protohype`) does not change with the repo name.
+The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, and ArgoCD AppProject. **The app pods assume the landing-zone `competitive-intelligence-platform` IAM role directly** via an EKS Pod Identity association (the chart's ServiceAccount, name pinned to the app, carries no role-arn annotation) — that's why `extraPolicyArns` stays empty. The tenant boundary (`tenant: protohype`, namespace `tenants-protohype`, project `tenant-protohype`) does not change with the repo name.
 
 ### The Helm chart (`chart/`)
 
@@ -81,13 +81,13 @@ The application Deployment plus everything that supports it. Templates under `ch
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deployment.yaml`        | The main pod — scheduler + Slack bot + HTTP health server on the health port. `replicaCount: 1` (single-writer crawl mutex)                                               |
 | `service.yaml`           | ClusterIP on the health port (`/health` + `/readyz`)                                                                                                                      |
-| `serviceaccount.yaml`    | `eks.amazonaws.com/role-arn` rendered from `aws.platformRoleArn` (the landing-zone role). No inline IAM                                                                   |
+| `serviceaccount.yaml`    | name pinned to the app; bound to the landing-zone IAM role by an EKS Pod Identity association. No role-arn annotation, no inline IAM                                      |
 | `externalsecret.yaml`    | ESO syncs `competitive-intelligence/<env>/app-secrets` (Slack + optional provider keys) + `competitive-intelligence/<env>/db-credentials` (PG creds) from Secrets Manager |
 | `networkpolicy.yaml`     | Default-deny + egress allow-list (DNS, HTTPS to crawl targets + Bedrock + Slack with IMDS blocked, Postgres on the VPC CIDR). No public ingress                           |
 | `prometheusrule.yaml`    | Alerts — crawl failures, circuit-breaker open, alert-send failures, pgvector unreachable                                                                                  |
 | `grafana-dashboard.yaml` | ConfigMap loading `chart/dashboards/competitive-intelligence.json`                                                                                                        |
 
-`values.yaml` is the base; `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `aws.platformRoleArn`, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no ingress** — the Slack surface is Socket Mode (outbound), and the only inbound is same-namespace probes.
+`values.yaml` is the base; `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no ingress** — the Slack surface is Socket Mode (outbound), and the only inbound is same-namespace probes.
 
 ### Required tenant files
 
@@ -126,7 +126,7 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 ## Conventions
 
 - **Provider registry, not inline construction.** LLM / embeddings / vectors are each a `createRegistry<T>(kind)` returning typed `{ register, get, has, names }`. Pick the implementation by config; `src/index.ts` is the only place real clients are built. Swapping a backend is a one-file change to the bootstrap.
-- **Bedrock-default LLM.** Bedrock (Converse for the LLM, Titan for embeddings) is the default and runs on the AWS credential chain — IRSA on the cluster, no keys. Anthropic/OpenAI are alternates that only register when their key is present.
+- **Bedrock-default LLM.** Bedrock (Converse for the LLM, Titan for embeddings) is the default and runs on the AWS credential chain — EKS Pod Identity on the cluster, no keys. Anthropic/OpenAI are alternates that only register when their key is present.
 - **Prompt caching.** The analysis system prompt is identical on every diff, so the Converse request marks a `cachePoint` after the system block. Cache hits are emitted as a metric — see `ARCHITECTURE.md` § Prompt caching.
 - **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings, and around the Slack alert sink. Threshold-based, no library.
 - **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler runs one global crawl over all sources on an interval; an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
@@ -139,8 +139,8 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 - [`CLAUDE.md`](CLAUDE.md) — per-module breakdown, configuration, conventions, test map
 - [`README.md`](README.md) — front door: run, test, deploy
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — the crawl-source / provider / vector-backend recipes + the test contract + PR flow
-- [`SECURITY.md`](SECURITY.md) — reporting, posture (SSRF guard, IRSA-only, default-deny network), known limitations
+- [`SECURITY.md`](SECURITY.md) — reporting, posture (SSRF guard, Pod-Identity-only, default-deny network), known limitations
 - [`chart/README.md`](chart/README.md) — template-by-template chart reference + the per-tenant infra it expects
 - [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md) — the stack-wide view
 - [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) — the operator that reconciles the Platform CR
-- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `competitive-intelligence-platform` substrate (Aurora pgvector + IRSA + Secrets Manager) the chart's IRSA role and data store live in
+- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `competitive-intelligence-platform` substrate (Aurora pgvector + IAM + Secrets Manager) the chart's IAM role and data store live in

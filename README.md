@@ -15,7 +15,7 @@ A competitive-intelligence radar. It crawls competitor websites on an interval, 
 
 A radar that watches competitor marketing, docs, and pricing pages and tells you when something actually changed. The trick is the diff: each page is chunked and embedded, and a chunk only counts as "new" when its cosine similarity to the best stored match for that source falls below 0.85. A reworded paragraph or a reordered nav doesn't fire; a new enterprise tier or a deprecated API does. Above-threshold changes get an LLM analysis and a Slack alert; the accumulated history answers ad-hoc questions (`/competitive-intelligence query …`).
 
-History is durable — embeddings live in pgvector (Aurora), so a pod restart or rollout diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any unseeded source is treated as baseline seeding (ingest + embed, no alerts). Bedrock (Claude Sonnet via Converse for analysis, Titan v2 for embeddings) is the default and runs on-account via IRSA — no keys; Anthropic and OpenAI are pluggable alternates. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the bounded contexts, the crawl→alert data flow, and the load-bearing decisions.
+History is durable — embeddings live in pgvector (Aurora), so a pod restart or rollout diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any unseeded source is treated as baseline seeding (ingest + embed, no alerts). Bedrock (Claude Sonnet via Converse for analysis, Titan v2 for embeddings) is the default and runs on-account via EKS Pod Identity — no keys; Anthropic and OpenAI are pluggable alternates. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the bounded contexts, the crawl→alert data flow, and the load-bearing decisions.
 
 ![architecture](docs/architecture.svg)
 
@@ -43,7 +43,7 @@ task ci   # build + lint + typecheck + format:check + test + helm lint/template 
 
 ## Bedrock prerequisites
 
-Bedrock is the default for both LLM and embeddings and runs on the AWS credential chain — no API keys. On the cluster that chain resolves to IRSA; locally it resolves to your `~/.aws` credentials or SSO. Confirm `aws sts get-caller-identity` works, and enable model access for the configured `BEDROCK_LLM_MODEL` (default `us.anthropic.claude-sonnet-4-20250514-v1:0`) and `amazon.titan-embed-text-v2:0` in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for your region. To use a direct API provider instead, set `LLM_PROVIDER` / `EMBEDDING_PROVIDER` and the matching key.
+Bedrock is the default for both LLM and embeddings and runs on the AWS credential chain — no API keys. On the cluster that chain resolves to the pod's IAM role via EKS Pod Identity; locally it resolves to your `~/.aws` credentials or SSO. Confirm `aws sts get-caller-identity` works, and enable model access for the configured `BEDROCK_LLM_MODEL` (default `us.anthropic.claude-sonnet-4-20250514-v1:0`) and `amazon.titan-embed-text-v2:0` in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for your region. To use a direct API provider instead, set `LLM_PROVIDER` / `EMBEDDING_PROVIDER` and the matching key.
 
 ## Sources
 
@@ -75,17 +75,17 @@ Slack is optional — the CLI works without it. To enable: create a Slack app, a
 
 Ships as a [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) Platform tenant. The trio:
 
-- **`chart/`** — the application Helm chart: Deployment (`replicaCount: 1`, single-writer crawl mutex) + Service (`/health`+`/readyz`) + NetworkPolicy (default-deny + egress allow-list, IMDS blocked, no public ingress) + ServiceAccount (IRSA) + ExternalSecret (ESO), plus PrometheusRule alerts and a Grafana dashboard. Per-env deltas in `chart/values-{dev,staging,production}.yaml`.
+- **`chart/`** — the application Helm chart: Deployment (`replicaCount: 1`, single-writer crawl mutex) + Service (`/health`+`/readyz`) + NetworkPolicy (default-deny + egress allow-list, IMDS blocked, no public ingress) + ServiceAccount (Pod Identity) + ExternalSecret (ESO), plus PrometheusRule alerts and a Grafana dashboard. Per-env deltas in `chart/values-{dev,staging,production}.yaml`.
 - **`platform.yaml`** — the `Platform` CR + `BudgetPolicy` declaring the tenant boundary (`tenant: protohype`, namespace `tenants-protohype`, project `tenant-protohype`). The operator reconciles the Namespace, ResourceQuota, NetworkPolicy, and ArgoCD AppProject.
 - **`gitops/applicationset-entry.yaml`** — the ApplicationSet entry registered into [`nanohype/eks-gitops`](https://github.com/nanohype/eks-gitops) for ArgoCD reconciliation.
 
-The AWS substrate — Aurora Serverless v2 (pgvector), the IRSA role, and Secrets Manager seeding — is provisioned by the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). Its `irsa_role_arn` output feeds the chart's `aws.platformRoleArn`; the Aurora endpoint feeds `tenantInfra.*`. Apply `platform.yaml` once, wait for `Ready`, then ArgoCD owns the rollout: bump `image.tag` in the per-env values, commit, push.
+The AWS substrate — Aurora Serverless v2 (pgvector), the IAM role, and Secrets Manager seeding — is provisioned by the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). It binds the role to the chart's ServiceAccount with an EKS Pod Identity association; the Aurora endpoint feeds `tenantInfra.*`. Apply `platform.yaml` once, wait for `Ready`, then ArgoCD owns the rollout: bump `image.tag` in the per-env values, commit, push.
 
 ## Boundaries
 
 This repo owns the application — the crawler, the semantic-diff pipeline, the alert + intel engines, the Slack surface, and the tenant trio that deploys it. It does **not** own:
 
-- AWS substrate (Aurora/pgvector, the IRSA role, Secrets Manager seeding) → the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone)
+- AWS substrate (Aurora/pgvector, the IAM role, Secrets Manager seeding) → the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone)
 - Cluster addons (external-secrets, the OTel collector + log forwarder, kube-prometheus-stack) → [`eks-gitops`](https://github.com/nanohype/eks-gitops)
 
 ## Configuration

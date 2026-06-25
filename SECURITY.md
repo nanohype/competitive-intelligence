@@ -18,9 +18,9 @@ competitive-intelligence crawls external competitor websites and feeds the conte
 
 ### Identity & secrets
 
-- No long-lived credentials in the app. Pods get AWS access via **IRSA** (Workload Identity) — the Bedrock LLM + Titan embeddings run on the AWS credential chain, which resolves to the landing-zone `competitive-intelligence-platform` role. There are no static keys anywhere in the repo or image; `config.ts` reads no `AWS_ACCESS_KEY_ID`.
+- No long-lived credentials in the app. Pods get AWS access via **EKS Pod Identity** — the Bedrock LLM + Titan embeddings run on the AWS credential chain, which resolves to the landing-zone `competitive-intelligence-platform` role. There are no static keys anywhere in the repo or image; `config.ts` reads no `AWS_ACCESS_KEY_ID`.
 - App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets Manager (`competitive-intelligence/<env>/*`) into a Kubernetes Secret, consumed via `envFrom` — never committed. Slack tokens and optional Anthropic/OpenAI keys come from `competitive-intelligence/<env>/app-secrets`; Postgres credentials come from the Aurora-managed `competitive-intelligence/<env>/db-credentials`.
-- The optional Anthropic/OpenAI direct-API providers are off by default. Bedrock (on-account, IRSA, no key) is the default for both LLM and embeddings.
+- The optional Anthropic/OpenAI direct-API providers are off by default. Bedrock (on-account, EKS Pod Identity, no key) is the default for both LLM and embeddings.
 
 ### Data handling
 
@@ -40,4 +40,4 @@ competitive-intelligence crawls external competitor websites and feeds the conte
 
 ## Compliance
 
-competitive-intelligence exposes the controls needed for **SOC 2 Type II** — IRSA-only access with no static credentials, secrets sourced from Secrets Manager via External Secrets (never committed), encrypted-at-rest data in Aurora, a default-deny network posture with IMDS blocked, and on-account inference with no third-party data egress on the default path. Substrate-level controls (CIS EKS baseline, Pod Security Standards, image signing) are enforced upstream by `landing-zone` and `eks-gitops`.
+competitive-intelligence exposes the controls needed for **SOC 2 Type II** — Pod-Identity-only access with no static credentials, secrets sourced from Secrets Manager via External Secrets (never committed), encrypted-at-rest data in Aurora, a default-deny network posture with IMDS blocked, and on-account inference with no third-party data egress on the default path. Substrate-level controls (CIS EKS baseline, Pod Security Standards, image signing) are enforced upstream by `landing-zone` and `eks-gitops`.

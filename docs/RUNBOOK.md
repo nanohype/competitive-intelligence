@@ -11,7 +11,7 @@ On-call reference for the `competitive-intelligence` Platform tenant. Pairs with
   on meaningful change.
 - **Topology:** `replicaCount: 1` (single writer; do not scale without leader
   election). Durable state in Aurora Serverless v2 (pgvector). Bedrock for
-  LLM + embeddings via IRSA.
+  LLM + embeddings via EKS Pod Identity.
 - **Probes:** `/health` (liveness), `/readyz` (readiness — fails when the vector
   store is unreachable). HTTP server on `PORT` regardless of Slack transport.
 - **Logs:** structured JSON to stderr → cluster log forwarder → Loki.

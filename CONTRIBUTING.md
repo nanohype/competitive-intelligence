@@ -55,7 +55,7 @@ Sources are data, not code — edit `sources.json` (validated against the Zod sc
 
 ## Deploy contract
 
-This app ships as a Platform tenant: a Helm `chart/`, a `platform.yaml` (Platform + BudgetPolicy CRs), and a `gitops/applicationset-entry.yaml`. Per-tenant AWS substrate (Aurora pgvector, IRSA, Secrets Manager) lives in `landing-zone` (the `competitive-intelligence-platform` component); cluster addons live in `eks-gitops`. Do not add IAM, cloud resources, or cluster addons to the chart — see [ARCHITECTURE.md](./ARCHITECTURE.md#boundaries).
+This app ships as a Platform tenant: a Helm `chart/`, a `platform.yaml` (Platform + BudgetPolicy CRs), and a `gitops/applicationset-entry.yaml`. Per-tenant AWS substrate (Aurora pgvector, IAM, Secrets Manager) lives in `landing-zone` (the `competitive-intelligence-platform` component); cluster addons live in `eks-gitops`. Do not add IAM, cloud resources, or cluster addons to the chart — see [ARCHITECTURE.md](./ARCHITECTURE.md#boundaries).
 
 ## Code of Conduct
 

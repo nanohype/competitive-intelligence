@@ -20,18 +20,14 @@ service:
 
 serviceAccount:
   create: true
-  # Free-form additional annotations merged into the ServiceAccount. The
-  # eks.amazonaws.com/role-arn annotation is rendered separately from
-  # aws.platformRoleArn so per-env role swaps don't trample this map.
+  # Pinned to the app name so it matches the service_account of the EKS Pod
+  # Identity association landing-zone's competitive-intelligence-platform
+  # component creates — that association binds this ServiceAccount to its IAM
+  # role, so the pod needs no role-arn annotation and the chart carries no AWS
+  # account values.
+  name: competitive-intelligence
+  # Free-form additional annotations merged into the ServiceAccount.
   annotations: {}
-
-aws:
-  # ARN of the IRSA role the pods assume. Comes from landing-zone's
-  # competitive-intelligence-platform component (output: irsa_role_arn). Empty
-  # at the chart level — per-env values plumb in the actual ARN. Empty value
-  # omits the eks.amazonaws.com/role-arn annotation entirely (useful for local
-  # helm-template / kind smoke runs where no real IAM role exists).
-  platformRoleArn: ""
 
 # Resource attributes the shared chart labels read (tenant-chart-base.labels →
 # agents.nanohype.dev/{tenant,platform}). The OTEL_RESOURCE_ATTRIBUTES env var
@@ -138,7 +134,7 @@ networkPolicy:
           port: 53
     # HTTPS to the open internet — the crawler hits arbitrary competitor sites,
     # plus Bedrock and Slack. 169.254.0.0/16 is excluded so pods can never reach
-    # the IMDS endpoint (SSRF / credential-exfil guard; IRSA is the only path to
+    # the IMDS endpoint (SSRF / credential-exfil guard; Pod Identity is the only path to
     # AWS creds).
     - to:
         - ipBlock:

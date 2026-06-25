@@ -35,9 +35,9 @@ The belt-and-suspenders is a **cold-start baseline guard** in the pipeline: when
 
 The scheduler runs one global crawl over all sources, and an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from racing. Both assume a single writer. The differ does a read-then-replace per source (`deleteByMetadata` + `upsert`), so two pods crawling the same source concurrently would race that replace and could double-fire alerts. The chart pins `replicaCount: 1`; scaling horizontally would require leader election, which isn't in scope. This is documented in the chart and called out here so nobody bumps the replica count expecting throughput.
 
-### Bedrock-default LLM via IRSA, with Anthropic/OpenAI alternates
+### Bedrock-default LLM via EKS Pod Identity, with Anthropic/OpenAI alternates
 
-The default LLM is Bedrock (Claude Sonnet via Converse) and the default embedder is Bedrock Titan v2. Both run on the AWS credential chain, which resolves to **IRSA** on the cluster once the ServiceAccount carries the `eks.amazonaws.com/role-arn` annotation — no API keys anywhere in the repo or image. Anthropic and OpenAI register as alternates only when their key is present; the LLM policy forbids defaulting to a non-Anthropic model, and `bedrock` is the default, so that holds. Inference runs on-account — crawled competitor content is not sent to a third party.
+The default LLM is Bedrock (Claude Sonnet via Converse) and the default embedder is Bedrock Titan v2. Both run on the AWS credential chain, which resolves to the pod's IAM role via **EKS Pod Identity** on the cluster — no API keys anywhere in the repo or image. Anthropic and OpenAI register as alternates only when their key is present; the LLM policy forbids defaulting to a non-Anthropic model, and `bedrock` is the default, so that holds. Inference runs on-account — crawled competitor content is not sent to a third party.
 
 ### Converse prompt caching
 
@@ -78,7 +78,7 @@ The Slack bot runs in Socket Mode (outbound WebSocket, no inbound port) when `SL
 
 ## What this repo deliberately does NOT do
 
-- **Not its own cloud substrate.** It does not provision Aurora, the IRSA role, or Secrets Manager entries. Those are landing-zone (see Boundaries). The chart consumes their outputs.
+- **Not its own cloud substrate.** It does not provision Aurora, the IAM role, or Secrets Manager entries. Those are landing-zone (see Boundaries). The chart consumes their outputs.
 - **Not a model host.** Bedrock runs Claude and Titan inference outside the cluster, on-account. No self-hosted models.
 - **Not a cluster bootstrap.** The EKS cluster, ArgoCD, and the addons it depends on (External Secrets Operator, the observability stack, kube-prometheus-stack) must already exist (eks-gitops).
 - **Not the tenant operator.** It declares a `Platform` CR; the `eks-agent-platform` operator reconciles the namespace, ResourceQuota, NetworkPolicy, and AppProject.
@@ -93,10 +93,10 @@ This repo owns the application — source, chart, Platform CR, gitops entry. Eve
 `landing-zone/components/aws/competitive-intelligence-platform/` provisions the per-tenant AWS data plane and does not move here:
 
 - Aurora Serverless v2 PostgreSQL with pgvector (the durable vector store)
-- The IRSA role the app pods assume — `bedrock:InvokeModel` on the Sonnet inference profile + Titan Embed v2, `secretsmanager:GetSecretValue` scoped to `competitive-intelligence/<env>/*`
+- The IAM role the app pods assume — `bedrock:InvokeModel` on the Sonnet inference profile + Titan Embed v2, `secretsmanager:GetSecretValue` scoped to `competitive-intelligence/<env>/*`
 - Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (Slack + optional provider keys) and the Aurora-managed `competitive-intelligence/<env>/db-credentials`
 
-Its `irsa_role_arn` output is the role the app pods assume — plumbed into the chart through the per-env `aws.platformRoleArn` Helm value; the Aurora endpoint feeds `tenantInfra.pgHost/pgPort/pgDatabase`. The chart contains **no inline IAM**; the trust relationship is owned in landing-zone and consumed by reference.
+Its IAM role is the role the app pods assume, bound to the chart's ServiceAccount by an EKS Pod Identity association; the Aurora endpoint feeds `tenantInfra.pgHost/pgPort/pgDatabase`. The chart contains **no inline IAM**; the role and the association are owned in landing-zone and consumed by reference.
 
 ### Cluster addons → `eks-gitops`
 

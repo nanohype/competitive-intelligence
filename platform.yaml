@@ -16,10 +16,10 @@
 #     tenant namespace
 #
 # What this chart owns separately (NOT operator-reconciled):
-#   - The chart's own ServiceAccount (`competitive-intelligence`). Its
-#     `eks.amazonaws.com/role-arn` annotation comes from landing-zone's
-#     competitive-intelligence-platform component (output: irsa_role_arn) via
-#     per-env Helm values (aws.platformRoleArn). The operator's
+#     The chart's own ServiceAccount (`competitive-intelligence`) is bound to
+#     landing-zone's competitive-intelligence-platform IAM role by an EKS Pod
+#     Identity association that component creates — no role-arn annotation. The
+#     operator's
 #     `<env>-competitive-intelligence-tenant` role trusts the `tenant-runtime`
 #     SA, not this app's SA — two roles, two trusts, two workload classes
 #     (AgentFleet pods vs the radar's worker pod)
@@ -27,7 +27,7 @@
 # Tenant substrate (Aurora pgvector, Bedrock invoke policy, Secrets Manager
 # seeding) lives in landing-zone's components/aws/competitive-intelligence-platform/.
 # Once that component's per-env entry applies, its outputs wire into the chart's
-# per-env values (`tenantInfra.*` + `aws.platformRoleArn`).
+# per-env values (`tenantInfra.*`).
 
 ---
 apiVersion: governance.nanohype.dev/v1alpha1
@@ -61,8 +61,8 @@ spec:
   identity:
     # Bedrock model access — Claude (anthropic) for analysis/query, Titan
     # (amazon) for embeddings. The radar's worker pod assumes the
-    # landing-zone-owned competitive-intelligence-platform IRSA role directly
-    # (via aws.platformRoleArn in the chart); the operator's role here exists
+    # landing-zone-owned competitive-intelligence-platform IAM role directly
+    # (via the Pod Identity association); the operator's role here exists
     # for AgentFleet workloads in this namespace if/when they land.
     allowedModelFamilies:
       - anthropic

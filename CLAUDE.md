@@ -8,7 +8,7 @@ Competitive-intelligence radar — crawls competitor sites, semantic-diffs each 
 
 A standalone Platform tenant of the `protohype` team on the `eks-agent-platform` operator. It monitors a configured set of competitor pages: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert. The accumulated intelligence is queryable over Slack (`/competitive-intelligence query`) and the CLI.
 
-Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config, so swapping a backend is a one-file change to the bootstrap. Bedrock is the default for LLM (Converse) and embeddings (Titan v2), running on the AWS credential chain → IRSA on the cluster, no keys. Anthropic and OpenAI are pluggable alternates.
+Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config, so swapping a backend is a one-file change to the bootstrap. Bedrock is the default for LLM (Converse) and embeddings (Titan v2), running on the AWS credential chain → EKS Pod Identity on the cluster, no keys. Anthropic and OpenAI are pluggable alternates.
 
 ## How It Works
 
@@ -63,7 +63,7 @@ All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`
 
 - `LLM_PROVIDER` — bedrock (default), anthropic, or openai
 - `EMBEDDING_PROVIDER` — bedrock (default) or openai
-- `AWS_REGION` — for Bedrock. Uses the AWS credential chain → IRSA on the cluster, no API keys
+- `AWS_REGION` — for Bedrock. Uses the AWS credential chain → EKS Pod Identity on the cluster, no API keys
 - `BEDROCK_LLM_MODEL` / `BEDROCK_EMBEDDING_MODEL` — model IDs (LLM defaults to a cross-region Claude Sonnet inference profile; embeddings to Titan Embed v2)
 - `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — only when using those providers directly
 - `ANTHROPIC_LLM_MODEL` / `OPENAI_LLM_MODEL` — direct-API model IDs (defaults `claude-sonnet-4-6` / `gpt-4o`)
@@ -122,7 +122,7 @@ When adding tests: mock providers by implementing the interface directly (`LlmPr
 
 Ships as the `competitive-intelligence` Platform tenant. No in-repo IaC and no manual rollout — ArgoCD reconciles the chart from git.
 
-1. **Substrate** — `landing-zone/components/aws/competitive-intelligence-platform/` provisions Aurora Serverless v2 (pgvector), the IRSA role, and Secrets Manager entries. Its `irsa_role_arn` drops into `chart/values-<env>.yaml` under `aws.platformRoleArn`; the Aurora endpoint feeds `tenantInfra.*`.
+1. **Substrate** — `landing-zone/components/aws/competitive-intelligence-platform/` provisions Aurora Serverless v2 (pgvector), the IAM role, and Secrets Manager entries. It owns the IAM role and the EKS Pod Identity association binding the ServiceAccount to it; the Aurora endpoint feeds `tenantInfra.*`.
 2. **Platform CR** — `kubectl apply -f platform.yaml` once. The operator reconciles Namespace `tenants-protohype`, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the tenant IRSA. Wait for `Ready`.
 3. **GitOps** — `gitops/applicationset-entry.yaml` is registered in `nanohype/eks-gitops`. ArgoCD renders the chart per env and rolls out the Deployment. New image tags flow through the release workflow → GHCR → ArgoCD.
 
