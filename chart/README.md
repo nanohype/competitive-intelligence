@@ -14,7 +14,7 @@ The workload is a single long-lived worker: a scheduler that runs one global cra
 - `templates/`
   - `deployment.yaml` — the worker pod. Non-root, `readOnlyRootFilesystem` with a `/tmp` emptyDir, env from `values.env` + `tenantInfra.pg*`, secrets via `envFrom: secretRef`, liveness `/health` + readiness `/readyz` on the health port, `checksum/external-secret` pod-roll annotation. `replicaCount: 1` with a `Recreate` strategy — single-writer scheduler + crawl mutex; never run two at once.
   - `service.yaml` — ClusterIP on the health port (default 3000)
-  - `serviceaccount.yaml` — thin `tenant-chart-base.serviceaccount` include; IRSA annotation fed by `aws.platformRoleArn` (per-env), pointing at the landing-zone-owned `competitive-intelligence-platform` IRSA role. No inline IAM.
+  - `serviceaccount.yaml` — thin `tenant-chart-base.serviceaccount` include; name pinned to `competitive-intelligence`, bound to its IAM role by the landing-zone `competitive-intelligence-platform` Pod Identity association. No role-arn annotation, no inline IAM.
   - `externalsecret.yaml` — pulls Slack tokens + optional provider keys from `competitive-intelligence/<env>/app-secrets` and `PGUSER`/`PGPASSWORD` from `competitive-intelligence/<env>/db-credentials`
   - `networkpolicy.yaml` — thin `tenant-chart-base.networkpolicy` include; default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR); ingress is same-namespace probes only
   - `prometheusrule.yaml` — alerts (crawl-failure spike, circuit-breaker open, alert-send failure, pgvector unreachable); uses the base chart's fullname/labels helpers
@@ -42,23 +42,16 @@ The chart alone is not enough to run the app. Two sibling files at the repo root
 Single-tenant component `components/aws/competitive-intelligence-platform/` provisions everything the pod needs:
 
 - Aurora Serverless v2 (PostgreSQL + pgvector at app bootstrap) — the durable vector store that survives restarts, so the first post-restart crawl diffs against real history instead of re-flooding alerts
-- IRSA role with the inline policy: Bedrock `InvokeModel` for Claude Sonnet + Titan Embed v2, Secrets Manager read scoped to `competitive-intelligence/<env>/*`, CloudWatch `PutMetricData`
+- IAM role with the inline policy: Bedrock `InvokeModel` for Claude Sonnet + Titan Embed v2, Secrets Manager read scoped to `competitive-intelligence/<env>/*`, CloudWatch `PutMetricData`
 - Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (Slack + optional provider keys) and the Aurora-managed `competitive-intelligence/<env>/db-credentials`
 
-## IRSA wiring
+## Pod identity
 
-The chart's `serviceaccount.yaml` annotates `eks.amazonaws.com/role-arn` with `.Values.aws.platformRoleArn`. Per-env values plumb in the landing-zone output:
-
-```sh
-# Production
-tofu -chdir=live/aws/workload-prod/us-west-2/production/competitive-intelligence-platform output -raw irsa_role_arn
-```
-
-Drop that into `chart/values-production.yaml` under `aws.platformRoleArn`. ArgoCD reads the per-env values at render time; pod restart picks up the SA annotation; the pod `AssumeRoleWithWebIdentity` into the role on the next AWS call. Bedrock uses the AWS credential chain, which resolves to this role on-cluster — no API keys.
+The chart's `serviceaccount.yaml` creates a ServiceAccount named `competitive-intelligence` (pinned via `serviceAccount.name`) and carries no role-arn annotation. The landing-zone `competitive-intelligence-platform` component creates an EKS Pod Identity association binding that `(namespace, service-account)` to the IAM role, so EKS injects credentials into the pod through the standard AWS credential chain — no annotation, no role ARN in the chart, no API keys. The ServiceAccount name must match the association's `service_account`, which is why it is pinned to the app name. Bedrock and every other AWS call resolve to this role on-cluster.
 
 ## LLM
 
-Bedrock is the default LLM provider (`LLM_PROVIDER=bedrock`), authenticated via IRSA. The model is pinned in `values.yaml` (`BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-4-20250514-v1:0`, a cross-region Sonnet inference profile — Converse requires the `us.anthropic.*-v1:0` profile form, not a bare alias) — verify the profile exists in the target region before promoting, since cross-region inference profiles differ. Anthropic and OpenAI remain pluggable alternates; their keys arrive through the ExternalSecret only when those providers are selected.
+Bedrock is the default LLM provider (`LLM_PROVIDER=bedrock`), authenticated via EKS Pod Identity. The model is pinned in `values.yaml` (`BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-4-20250514-v1:0`, a cross-region Sonnet inference profile — Converse requires the `us.anthropic.*-v1:0` profile form, not a bare alias) — verify the profile exists in the target region before promoting, since cross-region inference profiles differ. Anthropic and OpenAI remain pluggable alternates; their keys arrive through the ExternalSecret only when those providers are selected.
 
 ## Render locally
 
@@ -67,13 +60,13 @@ helm lint chart
 helm template competitive-intelligence chart -f chart/values.yaml -f chart/values-production.yaml > rendered.yaml
 ```
 
-`aws.platformRoleArn` and `tenantInfra.pgHost` are empty at the chart level, so a local render omits the IRSA annotation and falls back to local-dev defaults — no real AWS resources required for a smoke render.
+`tenantInfra.pgHost` is empty at the chart level and the ServiceAccount carries no cloud identity, so a local render falls back to local-dev defaults — no real AWS resources required for a smoke render.
 
 ## Where the rest lives
 
 This chart owns the app's k8s surface. The cloud substrate and cluster addons sit in other layers:
 
-**Substrate (`landing-zone/components/aws/competitive-intelligence-platform/`):** Aurora Serverless v2 (pgvector), the IRSA role, and the seeded Secrets Manager entries. Its `irsa_role_arn` output feeds `aws.platformRoleArn`; `aurora_cluster_endpoint` feeds `tenantInfra.pgHost`. AWS Secrets Manager stays the source of truth; `externalsecret.yaml` syncs it into a k8s Secret via ESO.
+**Substrate (`landing-zone/components/aws/competitive-intelligence-platform/`):** Aurora Serverless v2 (pgvector), the IAM role, and the seeded Secrets Manager entries. It owns the IAM role and the Pod Identity association that binds the ServiceAccount to it; `aurora_cluster_endpoint` feeds `tenantInfra.pgHost`. AWS Secrets Manager stays the source of truth; `externalsecret.yaml` syncs it into a k8s Secret via ESO.
 
 **Cluster addons (`eks-gitops`):** the external-secrets operator + `aws-secrets-manager` ClusterSecretStore, the grafana-agent (Alloy) OTLP receiver at `grafana-agent.monitoring.svc.cluster.local:4318` and the grafana-operator (→ Amazon Managed Grafana). The app writes structured JSON to stderr (tailed to Loki) and exports OTLP traces + metrics + logs to grafana-agent, which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecars.
 
