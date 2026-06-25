@@ -93,9 +93,12 @@ externalSecret:
   dbCredentialsSecret: "" # set per-env (competitive-intelligence/<env>/db-credentials)
 
 prometheusRule:
-  # Ships the rules to Mimir via the kube-prometheus-stack PrometheusRule CR.
-  # Set `enabled: false` if your cluster doesn't run kube-prometheus-stack.
-  enabled: true
+  # Ships SLO recording rules + burn-rate alerts to a Prometheus Operator
+  # (kube-prometheus-stack) via the PrometheusRule CR. Off by default — inert
+  # without an operator, which the managed-Prometheus stack (grafana-agent + AMP,
+  # alerts in Amazon Managed Grafana) doesn't run. Set `enabled: true` on a
+  # cluster that runs one.
+  enabled: false
   selector:
     release: kube-prometheus-stack
 
