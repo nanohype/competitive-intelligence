@@ -65,11 +65,19 @@ jobs:
       - name: Helm lint chart
         run: helm lint chart
 
-      - name: Helm template (staging values)
-        run: helm template competitive-intelligence chart -f chart/values-staging.yaml > /dev/null
+      - name: Helm template (staging + production)
+        run: |
+          mkdir -p rendered
+          helm template competitive-intelligence chart -f chart/values-staging.yaml > rendered/staging.yaml
+          helm template competitive-intelligence chart -f chart/values-production.yaml > rendered/production.yaml
 
-      - name: Helm template (production values)
-        run: helm template competitive-intelligence chart -f chart/values-production.yaml > /dev/null
+      # Source files are gated elsewhere; this asserts the RENDERED chart too —
+      # a zero account id, placeholder token, or account-less ARN that only
+      # appears after templating.
+      - name: Assert no unfilled sentinels in rendered output
+        uses: nanohype/nanohype/.github/actions/render-assert@main
+        with:
+          manifests: rendered
 
   docker:
     name: docker build (no push)
