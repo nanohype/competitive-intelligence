@@ -80,7 +80,7 @@ spec:
     # landing-zone's competitive-intelligence-platform component emits the
     # policy as `app_access_policy_arn`. Account-scoped, so it is filled per
     # environment at apply time (landing-zone
-    # docs/runbooks/model-access-cutover.md):
+    # docs/first-deploy-aws.md, App platform tenants):
     #   arn:aws:iam::<account>:policy/eks-agent-platform/competitive-intelligence-<env>-app-access
     extraPolicyArns: []
   compliance:
