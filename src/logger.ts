@@ -1,34 +1,27 @@
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+/**
+ * Structured JSON logging to stderr — stdout stays clean for CLI display.
+ *
+ * The emission core (JSON lines, level filtering, OTel trace_id/span_id
+ * correlation from the active span) is the vendored `@nanohype/runtime`
+ * logger; this file keeps the app's message-first call shape
+ * (`logger.info('crawl done', { sourceId })`) over it.
+ */
+import { createLogger, errorMessage, type LogLevel } from './vendor/runtime/logger.js';
 
-const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+export type { LogLevel };
 
-let minLevel: LogLevel = 'info';
+const base = createLogger();
 
 export function setLogLevel(level: LogLevel): void {
-  minLevel = level;
-}
-
-function log(level: LogLevel, message: string, data?: Record<string, unknown>): void {
-  if (LEVELS[level] < LEVELS[minLevel]) return;
-
-  const entry = {
-    ts: new Date().toISOString(),
-    level,
-    msg: message,
-    ...data,
-  };
-
-  // All structured logs go to stderr, keeping stdout clean for UI output
-  process.stderr.write(JSON.stringify(entry) + '\n');
+  base.setLevel(level);
 }
 
 export const logger = {
-  debug: (msg: string, data?: Record<string, unknown>) => log('debug', msg, data),
-  info: (msg: string, data?: Record<string, unknown>) => log('info', msg, data),
-  warn: (msg: string, data?: Record<string, unknown>) => log('warn', msg, data),
-  error: (msg: string, data?: Record<string, unknown>) => log('error', msg, data),
+  debug: (msg: string, data?: Record<string, unknown>) => base.debug(data ?? {}, msg),
+  info: (msg: string, data?: Record<string, unknown>) => base.info(data ?? {}, msg),
+  warn: (msg: string, data?: Record<string, unknown>) => base.warn(data ?? {}, msg),
+  error: (msg: string, data?: Record<string, unknown>) => base.error(data ?? {}, msg),
 };
 
 /** Normalize an unknown thrown value to a string message. */
-export const toMessage = (err: unknown): string =>
-  err instanceof Error ? err.message : String(err);
+export const toMessage = errorMessage;

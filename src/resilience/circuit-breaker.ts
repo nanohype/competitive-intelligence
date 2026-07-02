@@ -16,8 +16,8 @@
  *
  * This module owns the metrics wiring: `onOpen` raises the
  * `circuit_breaker.open` gauge (backs the CircuitBreakerOpen alert +
- * dashboard panel), and every successful call lowers it — mirroring the
- * gauge lifecycle call sites relied on before.
+ * dashboard panel) and `onClose` lowers it — the breaker reports its own
+ * state transitions, so nothing here wraps exec/reset.
  */
 
 import { createCircuitBreaker, type CircuitBreaker } from '../vendor/runtime/circuit-breaker.js';
@@ -39,26 +39,12 @@ export interface BreakerOptions {
 }
 
 export function createBreaker(name: string, options: BreakerOptions = {}): CircuitBreaker {
-  const breaker = createCircuitBreaker({
+  return createCircuitBreaker({
     name,
     failureThreshold: options.failureThreshold ?? 5,
     windowMs: options.windowMs ?? 300_000,
     halfOpenAfterMs: options.halfOpenAfterMs ?? 60_000,
     onOpen: (n) => setCircuitBreakerOpen(n, true),
+    onClose: (n) => setCircuitBreakerOpen(n, false),
   });
-
-  return {
-    async exec<T>(fn: () => Promise<T>): Promise<T> {
-      const result = await breaker.exec(fn);
-      // Any success means the breaker is closed (a half-open probe that
-      // succeeds closes it) — lower the gauge.
-      setCircuitBreakerOpen(name, false);
-      return result;
-    },
-    state: () => breaker.state(),
-    reset(): void {
-      breaker.reset();
-      setCircuitBreakerOpen(name, false);
-    },
-  };
 }

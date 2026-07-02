@@ -35,11 +35,26 @@ describe('createBreaker (app wiring)', () => {
     expect(setCircuitBreakerOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('lowers the gauge on every successful call', async () => {
-    const breaker = createBreaker('wiring-success', { failureThreshold: 3 });
+  it('lowers the gauge when a half-open probe recovers, and only on transitions', async () => {
+    let t = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => t);
+    const breaker = createBreaker('wiring-success', {
+      failureThreshold: 1,
+      halfOpenAfterMs: 30_000,
+    });
 
+    // A plain success while closed is not a transition — the gauge is untouched.
     await expect(breaker.exec(ok)).resolves.toBe('ok');
-    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith('wiring-success', false);
+    expect(setCircuitBreakerOpen).not.toHaveBeenCalled();
+
+    await expect(breaker.exec(fail)).rejects.toThrow('boom');
+    expect(setCircuitBreakerOpen).toHaveBeenLastCalledWith('wiring-success', true);
+
+    t += 30_000;
+    await expect(breaker.exec(ok)).resolves.toBe('ok');
+    expect(setCircuitBreakerOpen).toHaveBeenLastCalledWith('wiring-success', false);
+    expect(setCircuitBreakerOpen).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
   });
 
   it('reset() force-closes and lowers the gauge', async () => {
