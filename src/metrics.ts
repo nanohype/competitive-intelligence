@@ -6,69 +6,32 @@
  * preload (env-driven); the chart points it at
  * `grafana-agent.monitoring.svc.cluster.local:4318` → AMP.
  *
- * Generic call-site helpers — `timing` (ms histogram), `distribution` (unitless
- * histogram) and `counter` (monotonic counter) — back named convenience wrappers
- * for the hot paths: crawl duration + per-source outcome, chunks/diffs processed,
+ * The lazy-instrument core (namespace qualification, per-name caching, no-op
+ * degradation without a provider) is the vendored `@nanohype/runtime` metrics
+ * module; this file is the app surface over it: the generic `timing` /
+ * `distribution` / `counter` helpers plus named convenience wrappers for the
+ * hot paths — crawl duration + per-source outcome, chunks/diffs processed,
  * change-score distribution, alerts fired + send failures, pgvector errors,
- * Bedrock token counts (one metric per kind so cache effectiveness is visible),
- * and a circuit-breaker open/closed gauge.
+ * Bedrock token counts (one metric per kind so cache effectiveness is
+ * visible), and the circuit-breaker open/closed gauge.
  *
- * Metric names map to the `competitive_intelligence_*` series the chart's Grafana
- * dashboard and PrometheusRule query: an OTel instrument named `crawl.failures`
- * (a counter) arrives in AMP as `competitive_intelligence_crawl_failures_total`
- * after this module's NAMESPACE prefix + the OTLP→Prometheus naming convention
- * are applied. Keep instrument names in sync with the chart.
- *
- * When no meter provider is registered (tests, CI, or any run with
- * `OTEL_SDK_DISABLED=true`), the OTel API degrades to a no-op. That's
- * intentional: nothing here throws without a backend, so call sites stay
- * unconditional.
+ * Metric names map to the `competitive_intelligence_*` series the chart's
+ * Grafana dashboard and PrometheusRule query — an instrument named
+ * `crawl.failures` arrives in AMP as
+ * `competitive_intelligence_crawl_failures_total`. Keep instrument names in
+ * sync with the chart.
  */
-import {
-  metrics as otelMetrics,
-  type Counter,
-  type Histogram,
-  type ObservableGauge,
-  type ObservableResult,
-} from '@opentelemetry/api';
+import { createMetrics } from './vendor/runtime/metrics.js';
 
-const METER_NAME = 'competitive-intelligence';
-
-// Self-prefix every instrument with the service namespace so the Prometheus
-// series are deterministic — `crawl.sources` becomes
-// `competitive_intelligence_crawl_sources_total` purely from the instrument name
-// (OTLP→Prometheus lowercases dots/dashes to underscores + adds the _total
-// suffix), with no dependency on a collector-side namespace rewrite.
-const NAMESPACE = 'competitive_intelligence';
-const qualify = (name: string): string => `${NAMESPACE}.${name}`;
-
-const counters = new Map<string, Counter>();
-const histograms = new Map<string, Histogram>();
-
-function getCounter(name: string): Counter {
-  let c = counters.get(name);
-  if (!c) {
-    c = otelMetrics.getMeter(METER_NAME).createCounter(qualify(name));
-    counters.set(name, c);
-  }
-  return c;
-}
-
-function getHistogram(name: string, unit: string, boundaries?: number[]): Histogram {
-  let h = histograms.get(name);
-  if (!h) {
-    const opts: { unit: string; advice?: { explicitBucketBoundaries: number[] } } = { unit };
-    if (boundaries) opts.advice = { explicitBucketBoundaries: boundaries };
-    h = otelMetrics.getMeter(METER_NAME).createHistogram(qualify(name), opts);
-    histograms.set(name, h);
-  }
-  return h;
-}
+const metrics = createMetrics({
+  meterName: 'competitive-intelligence',
+  namespace: 'competitive_intelligence',
+});
 
 // ─── Generic helpers ───
 
 export function timing(name: string, ms: number, dimensions?: Record<string, string>): void {
-  getHistogram(name, 'ms').record(ms, dimensions);
+  metrics.timing(name, ms, dimensions);
 }
 
 /**
@@ -82,11 +45,11 @@ export function distribution(
   dimensions?: Record<string, string>,
   boundaries?: number[],
 ): void {
-  getHistogram(name, '1', boundaries).record(value, dimensions);
+  metrics.distribution(name, value, dimensions, boundaries ? { boundaries } : undefined);
 }
 
 export function counter(name: string, value = 1, dimensions?: Record<string, string>): void {
-  getCounter(name).add(value, dimensions);
+  metrics.counter(name, value, dimensions);
 }
 
 // ─── Named convenience wrappers (hot paths) ───
@@ -153,24 +116,10 @@ export function recordBedrockTokens(kind: TokenKind, count: number): void {
   counter(`bedrock.${kind}_tokens`, count);
 }
 
-// ─── Circuit-breaker open gauge ───
-// The CircuitBreakerOpen alert + dashboard panel query a 1/0 gauge labelled by
-// `target`. An ObservableGauge reports current per-breaker state on each scrape;
-// breakers call setCircuitBreakerOpen on every trip/reset.
-
-const breakerOpen = new Map<string, number>();
-let breakerGauge: ObservableGauge | undefined;
-
+/**
+ * The CircuitBreakerOpen alert + dashboard panel query a 1/0 gauge labelled
+ * by `target`; breakers call this on every trip/recovery.
+ */
 export function setCircuitBreakerOpen(name: string, open: boolean): void {
-  breakerOpen.set(name, open ? 1 : 0);
-  if (!breakerGauge) {
-    breakerGauge = otelMetrics
-      .getMeter(METER_NAME)
-      .createObservableGauge(qualify('circuit_breaker.open'));
-    breakerGauge.addCallback((result: ObservableResult) => {
-      for (const [target, value] of breakerOpen) {
-        result.observe(value, { target });
-      }
-    });
-  }
+  metrics.setObservable('circuit_breaker.open', open ? 1 : 0, { target: name });
 }

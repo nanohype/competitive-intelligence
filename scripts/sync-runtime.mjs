@@ -31,7 +31,10 @@ const DEST = join(ROOT, 'src', 'vendor', 'runtime');
 const CHECK = process.argv.includes('--check');
 
 // The modules this app consumes. Vendor only what's used.
-const MODULES = ['circuit-breaker.ts', 'registry.ts'];
+const MODULES = ['circuit-breaker.ts', 'logger.ts', 'metrics.ts', 'registry.ts'];
+
+// Org-canonical config carried the same way: byte-identical copy, drift-gated.
+const CONFIGS = [{ src: join('library', 'config', 'prettierrc.json'), dest: '.prettierrc.json' }];
 
 async function main() {
   try {
@@ -76,6 +79,22 @@ async function main() {
         drift++;
       }
     }
+    for (const cfg of CONFIGS) {
+      let same = false;
+      try {
+        same =
+          (await readFile(join(NANOHYPE_DIR, cfg.src), 'utf8')) ===
+          (await readFile(join(ROOT, cfg.dest), 'utf8'));
+      } catch {
+        same = false;
+      }
+      if (same) {
+        console.log(`ok  ${cfg.dest}`);
+      } else {
+        console.error(`DRIFT  ${cfg.dest} — run \`npm run sync:runtime\``);
+        drift++;
+      }
+    }
     if (drift > 0) process.exit(1);
   } else {
     await rm(DEST, { recursive: true, force: true });
@@ -83,6 +102,10 @@ async function main() {
     for (const mod of MODULES) {
       await copyFile(join(LIB_SRC, mod), join(DEST, mod));
       console.log(`vendored ${mod} -> src/vendor/runtime/${mod}`);
+    }
+    for (const cfg of CONFIGS) {
+      await copyFile(join(NANOHYPE_DIR, cfg.src), join(ROOT, cfg.dest));
+      console.log(`vendored ${cfg.src} -> ${cfg.dest}`);
     }
   }
 }
