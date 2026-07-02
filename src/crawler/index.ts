@@ -18,6 +18,12 @@ export interface CrawlOptions {
   userAgent: string;
   /** Invoked per source as it completes — lets callers stream progress. */
   onResult?: (source: Source, outcome: CrawlSourceOutcome) => void;
+  /**
+   * Page fetcher override. Production uses {@link fetchPage}; tests inject a
+   * fake to exercise the crawl orchestration (partial failure, metrics,
+   * progress callbacks) without HTTP.
+   */
+  fetchPageImpl?: typeof fetchPage;
 }
 
 /**
@@ -27,12 +33,13 @@ export interface CrawlOptions {
 export async function crawlAll(sources: Source[], options: CrawlOptions): Promise<CrawlResult> {
   const succeeded: ParsedContent[] = [];
   const failed: CrawlResult['failed'] = [];
+  const fetchImpl = options.fetchPageImpl ?? fetchPage;
 
   // Crawl sequentially to respect rate limits. For high-volume use,
   // add concurrency control with p-limit or a semaphore.
   for (const source of sources) {
     try {
-      const result = await fetchPage(source.url, options);
+      const result = await fetchImpl(source.url, options);
       const parsed = parseHtml(result.html, source, result.fetchedAt);
       succeeded.push(parsed);
       recordCrawlSource('succeeded');
