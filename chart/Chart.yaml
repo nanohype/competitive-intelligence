@@ -11,5 +11,5 @@ dependencies:
   # grafana dashboard, name/label helpers). Vendored under charts/tenant-chart-base
   # from nanohype/templates/tenant-chart-base — helm works offline, no fetch.
   - name: tenant-chart-base
-    version: 0.1.0
+    version: 0.2.0
     repository: file://charts/tenant-chart-base

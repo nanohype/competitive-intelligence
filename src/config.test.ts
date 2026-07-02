@@ -32,21 +32,19 @@ const CONFIG_ENV_KEYS = [
 ] as const;
 
 describe('loadConfig', () => {
-  let saved: Record<string, string | undefined>;
+  let saved: NodeJS.ProcessEnv;
 
   beforeEach(() => {
-    saved = {};
-    for (const k of CONFIG_ENV_KEYS) {
-      saved[k] = process.env[k];
-      delete process.env[k];
-    }
+    saved = process.env;
+    process.env = Object.fromEntries(
+      Object.entries(saved).filter(
+        ([key]) => !(CONFIG_ENV_KEYS as readonly string[]).includes(key),
+      ),
+    );
   });
 
   afterEach(() => {
-    for (const k of CONFIG_ENV_KEYS) {
-      if (saved[k] === undefined) delete process.env[k];
-      else process.env[k] = saved[k];
-    }
+    process.env = saved;
   });
 
   it('applies defaults with an empty environment', () => {
