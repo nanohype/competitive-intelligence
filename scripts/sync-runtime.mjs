@@ -20,18 +20,18 @@
  * on unlisted files under src/vendor/runtime/ so unconsumed modules can't
  * accumulate.
  */
-import { mkdir, readdir, readFile, rm, copyFile, access } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdir, readdir, readFile, rm, copyFile, access } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const NANOHYPE_DIR = process.env.NANOHYPE_DIR ?? join(ROOT, "..", "nanohype");
-const LIB_SRC = join(NANOHYPE_DIR, "library", "runtime", "src");
-const DEST = join(ROOT, "src", "vendor", "runtime");
-const CHECK = process.argv.includes("--check");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const NANOHYPE_DIR = process.env.NANOHYPE_DIR ?? join(ROOT, '..', 'nanohype');
+const LIB_SRC = join(NANOHYPE_DIR, 'library', 'runtime', 'src');
+const DEST = join(ROOT, 'src', 'vendor', 'runtime');
+const CHECK = process.argv.includes('--check');
 
 // The modules this app consumes. Vendor only what's used.
-const MODULES = ["circuit-breaker.ts", "registry.ts"];
+const MODULES = ['circuit-breaker.ts', 'registry.ts'];
 
 async function main() {
   try {
@@ -50,8 +50,8 @@ async function main() {
       let same = false;
       try {
         same =
-          (await readFile(join(LIB_SRC, mod), "utf8")) ===
-          (await readFile(join(DEST, mod), "utf8"));
+          (await readFile(join(LIB_SRC, mod), 'utf8')) ===
+          (await readFile(join(DEST, mod), 'utf8'));
       } catch {
         same = false;
       }

@@ -1,20 +1,20 @@
-import http from "node:http";
-import { loadConfig } from "./config.js";
-import { logger, setLogLevel, toMessage } from "./logger.js";
-import { bootstrapLlm } from "./providers/llm.js";
-import { bootstrapEmbeddings } from "./providers/embeddings.js";
-import { bootstrapVectorStore, type VectorStore } from "./providers/vectors.js";
-import { loadSourcesFromFile } from "./crawler/sources.js";
-import { crawlAll } from "./crawler/index.js";
-import { ingestAndDiff } from "./pipeline/index.js";
-import { createIntelEngine } from "./intel/index.js";
-import { createAlertEngine, type AlertSink } from "./alerts/index.js";
-import { createSlackBot } from "./slack/index.js";
-import { createScheduler } from "./scheduler/index.js";
-import { recordCrawlDuration } from "./metrics.js";
+import http from 'node:http';
+import { loadConfig } from './config.js';
+import { logger, setLogLevel, toMessage } from './logger.js';
+import { bootstrapLlm } from './providers/llm.js';
+import { bootstrapEmbeddings } from './providers/embeddings.js';
+import { bootstrapVectorStore, type VectorStore } from './providers/vectors.js';
+import { loadSourcesFromFile } from './crawler/sources.js';
+import { crawlAll } from './crawler/index.js';
+import { ingestAndDiff } from './pipeline/index.js';
+import { createIntelEngine } from './intel/index.js';
+import { createAlertEngine, type AlertSink } from './alerts/index.js';
+import { createSlackBot } from './slack/index.js';
+import { createScheduler } from './scheduler/index.js';
+import { recordCrawlDuration } from './metrics.js';
 
 /** Outcome of a crawl trigger, so callers (the slash command) can report honestly. */
-export type CrawlOutcome = "ran" | "skipped";
+export type CrawlOutcome = 'ran' | 'skipped';
 
 /**
  * Tiny liveness/readiness server.
@@ -28,32 +28,32 @@ export type CrawlOutcome = "ran" | "skipped";
  */
 function createHealthServer(store: VectorStore): http.Server {
   return http.createServer((req, res) => {
-    const url = req.url ?? "";
-    if (req.method === "GET" && url === "/health") {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ status: "ok" }));
+    const url = req.url ?? '';
+    if (req.method === 'GET' && url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
       return;
     }
-    if (req.method === "GET" && url === "/readyz") {
+    if (req.method === 'GET' && url === '/readyz') {
       store
         .count()
         .then(() => {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ status: "ready" }));
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ready' }));
         })
         .catch((err: unknown) => {
-          res.writeHead(503, { "content-type": "application/json" });
+          res.writeHead(503, { 'content-type': 'application/json' });
           res.end(
             JSON.stringify({
-              status: "unready",
+              status: 'unready',
               error: toMessage(err),
             }),
           );
         });
       return;
     }
-    res.writeHead(404, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "not_found" }));
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ status: 'not_found' }));
   });
 }
 
@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   // (after the import graph is already resolved) cannot guarantee. All OTel
   // config is env-driven (see the chart's OTEL_* env). Locally, telemetry is
   // simply absent and the OTel API degrades to a no-op.
-  logger.info("competitive-intelligence starting");
+  logger.info('competitive-intelligence starting');
 
   // ─── Config ───
   const config = loadConfig();
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   const store = bootstrapVectorStore(config);
 
   // ─── Sources ───
-  const sources = loadSourcesFromFile("sources.json");
+  const sources = loadSourcesFromFile('sources.json');
 
   // ─── Core crawl+process function ───
   // Mutex prevents overlapping runs from scheduler + slash command racing.
@@ -84,13 +84,13 @@ async function main(): Promise<void> {
 
   async function runCrawl(): Promise<CrawlOutcome> {
     if (crawlInProgress) {
-      logger.warn("crawl already in progress, skipping");
-      return "skipped";
+      logger.warn('crawl already in progress, skipping');
+      return 'skipped';
     }
 
     if (sources.length === 0) {
-      logger.warn("no sources configured, skipping crawl");
-      return "skipped";
+      logger.warn('no sources configured, skipping crawl');
+      return 'skipped';
     }
 
     crawlInProgress = true;
@@ -102,15 +102,15 @@ async function main(): Promise<void> {
       });
 
       if (crawlResult.succeeded.length === 0) {
-        logger.warn("all crawls failed, nothing to process");
-        return "ran";
+        logger.warn('all crawls failed, nothing to process');
+        return 'ran';
       }
 
       // recordDiffsProcessed / recordAlertFired are emitted inside
       // ingestAndDiff / the alert engine so the CLI path counts them too.
       const pipelineResult = await ingestAndDiff(crawlResult.succeeded, embedder, store);
       await alertEngine.processDiffs(pipelineResult.diffs);
-      return "ran";
+      return 'ran';
     } finally {
       crawlInProgress = false;
       recordCrawlDuration(Date.now() - startedAt);
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
   // ─── Slack bot + alert sink ───
   let alertSink: AlertSink = {
     async send(channel: string, _message) {
-      logger.info("alert (no slack configured)", { channel });
+      logger.info('alert (no slack configured)', { channel });
     },
   };
 
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   // ─── Scheduler ───
   const scheduler = createScheduler([
     {
-      name: "crawl",
+      name: 'crawl',
       intervalMs: config.crawlIntervalMinutes * 60 * 1000,
       // Discard the outcome — the scheduler job is fire-and-forget (void).
       fn: async () => {
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   // Always bound — k8s probes need a port even in Socket Mode (no inbound HTTP product surface).
   const healthServer = createHealthServer(store);
   await new Promise<void>((resolve) => healthServer.listen(config.port, resolve));
-  logger.info("health server listening", { port: config.port });
+  logger.info('health server listening', { port: config.port });
 
   // ─── Start ───
   scheduler.start();
@@ -162,10 +162,10 @@ async function main(): Promise<void> {
   }
 
   // Run initial crawl
-  logger.info("running initial crawl");
+  logger.info('running initial crawl');
   await runCrawl();
 
-  logger.info("competitive-intelligence running", {
+  logger.info('competitive-intelligence running', {
     sources: sources.length,
     crawlInterval: `${config.crawlIntervalMinutes}m`,
     vectorProvider: config.vectorProvider,
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.info("shutting down", { signal });
+    logger.info('shutting down', { signal });
     scheduler.stop();
     if (slackBot) await slackBot.stop();
     await new Promise<void>((resolve) => healthServer.close(() => resolve()));
@@ -188,11 +188,11 @@ async function main(): Promise<void> {
     process.exit(0);
   };
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 main().catch((err) => {
-  logger.error("fatal", { error: toMessage(err) });
+  logger.error('fatal', { error: toMessage(err) });
   process.exit(1);
 });

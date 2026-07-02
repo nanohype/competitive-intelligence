@@ -1,6 +1,6 @@
-import type { VectorStore } from "../providers/vectors.js";
-import type { Chunk } from "./chunker.js";
-import { logger } from "../logger.js";
+import type { VectorStore } from '../providers/vectors.js';
+import type { Chunk } from './chunker.js';
+import { logger } from '../logger.js';
 
 export interface DiffResult {
   sourceId: string;
@@ -39,7 +39,7 @@ export async function semanticDiff(
   },
 ): Promise<DiffResult> {
   const threshold = options.similarityThreshold ?? 0.85;
-  const sourceId = chunks[0]?.sourceId ?? "unknown";
+  const sourceId = chunks[0]?.sourceId ?? 'unknown';
 
   const newChunks: Chunk[] = [];
   const unchangedChunks: Chunk[] = [];
@@ -60,7 +60,7 @@ export async function semanticDiff(
 
   const changeScore = chunks.length === 0 ? 0 : newChunks.length / chunks.length;
 
-  logger.info("semantic diff", {
+  logger.info('semantic diff', {
     sourceId,
     changeScore: changeScore.toFixed(3),
     newChunks: newChunks.length,

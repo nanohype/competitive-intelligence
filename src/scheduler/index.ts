@@ -1,4 +1,4 @@
-import { logger, toMessage } from "../logger.js";
+import { logger, toMessage } from '../logger.js';
 
 export interface ScheduledJob {
   name: string;
@@ -21,23 +21,23 @@ export function createScheduler(jobs: ScheduledJob[]): Scheduler {
   return {
     start() {
       for (const job of jobs) {
-        logger.info("scheduling job", {
+        logger.info('scheduling job', {
           name: job.name,
           intervalMinutes: job.intervalMs / 60_000,
         });
 
         const timer = setInterval(async () => {
-          logger.info("job starting", { name: job.name });
+          logger.info('job starting', { name: job.name });
           const start = Date.now();
 
           try {
             await job.fn();
-            logger.info("job completed", {
+            logger.info('job completed', {
               name: job.name,
               durationMs: Date.now() - start,
             });
           } catch (err) {
-            logger.error("job failed", {
+            logger.error('job failed', {
               name: job.name,
               durationMs: Date.now() - start,
               error: toMessage(err),
@@ -50,7 +50,7 @@ export function createScheduler(jobs: ScheduledJob[]): Scheduler {
         timers.push(timer);
       }
 
-      logger.info("scheduler started", { jobs: jobs.length });
+      logger.info('scheduler started', { jobs: jobs.length });
     },
 
     stop() {
@@ -58,7 +58,7 @@ export function createScheduler(jobs: ScheduledJob[]): Scheduler {
         clearInterval(timer);
       }
       timers.length = 0;
-      logger.info("scheduler stopped");
+      logger.info('scheduler stopped');
     },
   };
 }

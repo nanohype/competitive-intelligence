@@ -1,9 +1,9 @@
-import type { Source } from "./sources.js";
-import type { ParsedContent } from "./parser.js";
-import { fetchPage } from "./fetcher.js";
-import { parseHtml } from "./parser.js";
-import { logger, toMessage } from "../logger.js";
-import { recordCrawlSource, recordCrawlFailure } from "../metrics.js";
+import type { Source } from './sources.js';
+import type { ParsedContent } from './parser.js';
+import { fetchPage } from './fetcher.js';
+import { parseHtml } from './parser.js';
+import { logger, toMessage } from '../logger.js';
+import { recordCrawlSource, recordCrawlFailure } from '../metrics.js';
 
 export interface CrawlResult {
   succeeded: ParsedContent[];
@@ -26,7 +26,7 @@ export interface CrawlOptions {
  */
 export async function crawlAll(sources: Source[], options: CrawlOptions): Promise<CrawlResult> {
   const succeeded: ParsedContent[] = [];
-  const failed: CrawlResult["failed"] = [];
+  const failed: CrawlResult['failed'] = [];
 
   // Crawl sequentially to respect rate limits. For high-volume use,
   // add concurrency control with p-limit or a semaphore.
@@ -35,19 +35,19 @@ export async function crawlAll(sources: Source[], options: CrawlOptions): Promis
       const result = await fetchPage(source.url, options);
       const parsed = parseHtml(result.html, source, result.fetchedAt);
       succeeded.push(parsed);
-      recordCrawlSource("succeeded");
+      recordCrawlSource('succeeded');
       options.onResult?.(source, { ok: true, parsed });
     } catch (err) {
       const message = toMessage(err);
-      logger.warn("crawl failed", { sourceId: source.id, url: source.url, error: message });
+      logger.warn('crawl failed', { sourceId: source.id, url: source.url, error: message });
       failed.push({ source, error: message });
-      recordCrawlSource("failed");
+      recordCrawlSource('failed');
       recordCrawlFailure(source.id);
       options.onResult?.(source, { ok: false, error: message });
     }
   }
 
-  logger.info("crawl complete", {
+  logger.info('crawl complete', {
     total: sources.length,
     succeeded: succeeded.length,
     failed: failed.length,

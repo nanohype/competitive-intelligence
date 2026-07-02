@@ -20,14 +20,14 @@
  * gauge lifecycle call sites relied on before.
  */
 
-import { createCircuitBreaker, type CircuitBreaker } from "../vendor/runtime/circuit-breaker.js";
-import { setCircuitBreakerOpen } from "../metrics.js";
+import { createCircuitBreaker, type CircuitBreaker } from '../vendor/runtime/circuit-breaker.js';
+import { setCircuitBreakerOpen } from '../metrics.js';
 
 export {
   CircuitOpenError,
   type CircuitBreaker,
   type CircuitState,
-} from "../vendor/runtime/circuit-breaker.js";
+} from '../vendor/runtime/circuit-breaker.js';
 
 export interface BreakerOptions {
   /** Failures within the window that trip the breaker. @default 5 */

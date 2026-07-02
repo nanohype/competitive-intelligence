@@ -42,7 +42,7 @@ spec:
   # diff + Titan embeddings on every chunk, every crawl. No per-query user
   # fan-out — spend is bounded by crawl interval × source count. Kill-switch
   # fires at 120% (USD 3000) when killSwitchEnabled is true.
-  monthlyUsd: "2500"
+  monthlyUsd: '2500'
   alertThresholdsPercent: [50, 80, 100]
   killSwitchEnabled: true
 ---

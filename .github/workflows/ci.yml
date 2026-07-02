@@ -22,8 +22,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-          cache: "npm"
+          node-version: '24'
+          cache: 'npm'
           cache-dependency-path: package-lock.json
 
       - name: Install
@@ -52,7 +52,7 @@ jobs:
         # the thresholds in vitest.config.ts so coverage can't silently regress.
         run: npm run test:coverage
         env:
-          OTEL_SDK_DISABLED: "true"
+          OTEL_SDK_DISABLED: 'true'
 
       - name: Build (emit dist)
         run: npm run build
@@ -105,7 +105,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: '24'
 
       - name: Vendored runtime drift check
         run: node scripts/sync-runtime.mjs --check

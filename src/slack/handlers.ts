@@ -1,6 +1,6 @@
-import type { App } from "@slack/bolt";
-import type { IntelEngine } from "../intel/index.js";
-import { logger, toMessage } from "../logger.js";
+import type { App } from '@slack/bolt';
+import type { IntelEngine } from '../intel/index.js';
+import { logger, toMessage } from '../logger.js';
 
 /**
  * Register Slack event handlers.
@@ -8,18 +8,18 @@ import { logger, toMessage } from "../logger.js";
  */
 export function registerHandlers(app: App, intel: IntelEngine): void {
   // Handle @mentions — treat the message as a competitive intelligence query
-  app.event("app_mention", async ({ event, say }) => {
-    const question = event.text.replace(/<@[A-Z0-9]+>/g, "").trim();
+  app.event('app_mention', async ({ event, say }) => {
+    const question = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
 
     if (!question) {
       await say({
-        text: "Ask me anything about your competitors. Try: _What has Acme shipped recently?_",
+        text: 'Ask me anything about your competitors. Try: _What has Acme shipped recently?_',
         thread_ts: event.ts,
       });
       return;
     }
 
-    logger.info("query via mention", { user: event.user, question });
+    logger.info('query via mention', { user: event.user, question });
 
     try {
       // Best-effort competitor name extraction from natural language.
@@ -37,9 +37,9 @@ export function registerHandlers(app: App, intel: IntelEngine): void {
         thread_ts: event.ts,
       });
     } catch (err) {
-      logger.error("query failed", { error: toMessage(err) });
+      logger.error('query failed', { error: toMessage(err) });
       await say({
-        text: "Something went wrong processing that query. Check the logs for details.",
+        text: 'Something went wrong processing that query. Check the logs for details.',
         thread_ts: event.ts,
       });
     }
@@ -52,20 +52,20 @@ export function registerHandlers(app: App, intel: IntelEngine): void {
   // through the app_mention handler above.
   app.message(async ({ message, say }) => {
     if (message.subtype) return; // skip bot messages, edits, etc.
-    if (message.channel_type !== "im") return;
-    if (!("text" in message) || !message.text) return;
+    if (message.channel_type !== 'im') return;
+    if (!('text' in message) || !message.text) return;
 
     const question = message.text.trim();
     if (!question) return;
 
-    logger.info("query via DM", { user: "user" in message ? message.user : "unknown", question });
+    logger.info('query via DM', { user: 'user' in message ? message.user : 'unknown', question });
 
     try {
       const answer = await intel.query(question);
       await say({ text: answer });
     } catch (err) {
-      logger.error("DM query failed", { error: toMessage(err) });
-      await say({ text: "Something went wrong. Check the logs." });
+      logger.error('DM query failed', { error: toMessage(err) });
+      await say({ text: 'Something went wrong. Check the logs.' });
     }
   });
 }

@@ -3,7 +3,7 @@
 
 image:
   repository: ghcr.io/nanohype/competitive-intelligence
-  tag: "" # pinned per-env
+  tag: '' # pinned per-env
   pullPolicy: IfNotPresent
 
 # Single long-lived worker: scheduler + Slack Socket Mode + crawler. The
@@ -87,10 +87,10 @@ externalSecret:
   # App secrets in AWS Secrets Manager — composed per-env as
   # competitive-intelligence/<env>/app-secrets. Slack tokens + optional
   # provider keys live here.
-  remoteRefSecret: "" # set per-env (competitive-intelligence/<env>/app-secrets)
+  remoteRefSecret: '' # set per-env (competitive-intelligence/<env>/app-secrets)
   # Aurora master credentials secret name (provisioned by the landing-zone
   # competitive-intelligence-platform component).
-  dbCredentialsSecret: "" # set per-env (competitive-intelligence/<env>/db-credentials)
+  dbCredentialsSecret: '' # set per-env (competitive-intelligence/<env>/db-credentials)
 
 prometheusRule:
   # Ships SLO recording rules + burn-rate alerts to a Prometheus Operator
@@ -180,17 +180,17 @@ env:
   # bump to the current Sonnet snapshot when rolling regions.
   BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-4-20250514-v1:0
   BEDROCK_EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
-  EMBEDDING_DIMENSIONS: "1024"
+  EMBEDDING_DIMENSIONS: '1024'
   # Durable vector store — survives restarts so the first post-restart crawl
   # diffs against real history instead of re-flooding alerts. Backed by the
   # landing-zone competitive-intelligence-platform Aurora pgvector cluster.
   VECTOR_PROVIDER: pgvector
-  CRAWL_INTERVAL_MINUTES: "60"
-  SIGNIFICANCE_THRESHOLD: "0.3"
+  CRAWL_INTERVAL_MINUTES: '60'
+  SIGNIFICANCE_THRESHOLD: '0.3'
   # User-facing Slack surface — kept topical (owner-approved). Alerts post here.
-  SLACK_ALERT_CHANNEL: "#competitive-intel"
+  SLACK_ALERT_CHANNEL: '#competitive-intel'
   USER_AGENT: competitive-intelligence/0.1.0
-  PORT: "3000"
+  PORT: '3000'
   NODE_ENV: production
   # OTel — exports to the grafana-agent OTLP receiver in the monitoring namespace,
   # which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecar.
@@ -203,11 +203,11 @@ env:
   OTEL_TRACES_SAMPLER: always_on
   OTEL_TRACES_EXPORTER: otlp
   OTEL_METRICS_EXPORTER: otlp
-  OTEL_METRIC_EXPORT_INTERVAL: "60000"
+  OTEL_METRIC_EXPORT_INTERVAL: '60000'
   # fs spans are noise for a long-lived crawler — drop them at the preload.
   OTEL_NODE_DISABLED_INSTRUMENTATIONS: fs
   # Resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT.
-  OTEL_RESOURCE_ATTRIBUTES: "service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=protohype,agents.platform=competitive-intelligence"
+  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=protohype,agents.platform=competitive-intelligence'
 
 # Per-tenant infrastructure references — populated by per-env values from the
 # landing-zone competitive-intelligence-platform component's outputs. Empty at
@@ -216,9 +216,9 @@ env:
 tenantInfra:
   # Aurora Serverless v2 (pgvector) endpoint — competitive-intelligence-platform:
   # module.aurora.cluster_endpoint (output: aurora_cluster_endpoint).
-  pgHost: ""
+  pgHost: ''
   # competitive-intelligence-platform output: aurora_cluster_port.
-  pgPort: "5432"
+  pgPort: '5432'
   # competitive-intelligence-platform: database_name.
   pgDatabase: competitive_intelligence
 
