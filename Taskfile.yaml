@@ -1,4 +1,4 @@
-version: "3"
+version: '3'
 
 vars:
   IMAGE: '{{.IMAGE | default "competitive-intelligence:dev"}}'
@@ -12,7 +12,7 @@ tasks:
   # === Composite ===
 
   ci:
-    desc: "Full local CI: install, build, lint, typecheck, format:check, test, helm lint/template, docker build"
+    desc: 'Full local CI: install, build, lint, typecheck, format:check, test, helm lint/template, docker build'
     cmds:
       - task: install
       - task: build
@@ -78,14 +78,14 @@ tasks:
   # === Docker ===
 
   docker:build:
-    desc: "Build the container image (no push)"
+    desc: 'Build the container image (no push)'
     cmds:
       - docker build -t {{.IMAGE}} .
 
   # === Security ===
 
   security:scan:
-    desc: "Run security scanners (gitleaks + trivy config) if available locally"
+    desc: 'Run security scanners (gitleaks + trivy config) if available locally'
     cmds:
       - |
         if command -v gitleaks >/dev/null 2>&1; then

@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
-import { Pool } from "pg";
-import type { Config } from "../config.js";
-import { createRegistry } from "../vendor/runtime/registry.js";
-import { logger } from "../logger.js";
-import { recordPgVectorError } from "../metrics.js";
+import { readFileSync } from 'node:fs';
+import { Pool } from 'pg';
+import type { Config } from '../config.js';
+import { createRegistry } from '../vendor/runtime/registry.js';
+import { logger } from '../logger.js';
+import { recordPgVectorError } from '../metrics.js';
 
 export interface VectorDocument {
   id: string;
@@ -163,7 +163,7 @@ export class PgVectorStore implements VectorStore {
   constructor(config: PgVectorStoreConfig) {
     this.query = config.query;
     this.embeddingDim = config.embeddingDim;
-    this.table = config.table ?? "ci_vectors";
+    this.table = config.table ?? 'ci_vectors';
   }
 
   /**
@@ -185,7 +185,7 @@ export class PgVectorStore implements VectorStore {
   private async init(): Promise<void> {
     // `vector` provides the VECTOR type + `<=>` cosine-distance operator.
     // Available on Aurora/RDS Postgres 15+ out of the box.
-    await this.query.query("CREATE EXTENSION IF NOT EXISTS vector");
+    await this.query.query('CREATE EXTENSION IF NOT EXISTS vector');
     await this.query.query(
       `CREATE TABLE IF NOT EXISTS ${this.table} (
          id        TEXT PRIMARY KEY,
@@ -204,7 +204,7 @@ export class PgVectorStore implements VectorStore {
       [this.table],
     );
     const existingDim = rows[0]?.atttypmod;
-    if (typeof existingDim === "number" && existingDim > 0 && existingDim !== this.embeddingDim) {
+    if (typeof existingDim === 'number' && existingDim > 0 && existingDim !== this.embeddingDim) {
       throw new Error(
         `pgvector: table ${this.table} has VECTOR(${existingDim}) but configured embeddingDim is ${this.embeddingDim} — drop/migrate the table or fix EMBEDDING_DIMENSIONS`,
       );
@@ -221,7 +221,7 @@ export class PgVectorStore implements VectorStore {
       `CREATE INDEX IF NOT EXISTS ${this.table}_metadata_idx
          ON ${this.table} USING GIN (metadata)`,
     );
-    logger.info("pgvector schema ready", { table: this.table, dim: this.embeddingDim });
+    logger.info('pgvector schema ready', { table: this.table, dim: this.embeddingDim });
   }
 
   private vectorLiteral(embedding: number[]): string {
@@ -230,7 +230,7 @@ export class PgVectorStore implements VectorStore {
         `pgvector: embedding dim ${embedding.length} does not match configured ${this.embeddingDim}`,
       );
     }
-    return `[${embedding.join(",")}]`;
+    return `[${embedding.join(',')}]`;
   }
 
   async upsert(docs: VectorDocument[]): Promise<void> {
@@ -256,7 +256,7 @@ export class PgVectorStore implements VectorStore {
   ): Promise<SearchResult[]> {
     await this.ensureSchema();
     const params: unknown[] = [this.vectorLiteral(embedding)];
-    let where = "";
+    let where = '';
     if (filter) {
       params.push(JSON.stringify(filter));
       where = `WHERE metadata @> $${params.length}::jsonb`;
@@ -305,7 +305,7 @@ export class PgVectorStore implements VectorStore {
   async count(filter?: Record<string, string>): Promise<number> {
     await this.ensureSchema();
     const params: unknown[] = [];
-    let where = "";
+    let where = '';
     if (filter) {
       params.push(JSON.stringify(filter));
       where = `WHERE metadata @> $1::jsonb`;
@@ -320,11 +320,11 @@ export class PgVectorStore implements VectorStore {
 
 // ─── Registry ───
 
-export const vectorRegistry = createRegistry<VectorStore>("vector-store");
+export const vectorRegistry = createRegistry<VectorStore>('vector-store');
 
 export function bootstrapVectorStore(config: Config): VectorStore {
-  vectorRegistry.register("memory", () => new MemoryVectorStore());
-  vectorRegistry.register("pgvector", () => {
+  vectorRegistry.register('memory', () => new MemoryVectorStore());
+  vectorRegistry.register('pgvector', () => {
     // `pg` reads PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE from the
     // environment automatically when no connectionString is given, so an
     // unset DATABASE_URL still works against the Aurora-managed credentials.
@@ -332,7 +332,7 @@ export function bootstrapVectorStore(config: Config): VectorStore {
     // otherwise Node's built-in trust store validates the publicly-anchored RDS
     // global CA. Either way the connection is encrypted AND authenticated.
     const ssl = config.pgCaPath
-      ? { ca: readFileSync(config.pgCaPath, "utf8"), rejectUnauthorized: true }
+      ? { ca: readFileSync(config.pgCaPath, 'utf8'), rejectUnauthorized: true }
       : { rejectUnauthorized: true };
     const pool = new Pool({
       ...(config.databaseUrl ? { connectionString: config.databaseUrl } : {}),
@@ -344,9 +344,9 @@ export function bootstrapVectorStore(config: Config): VectorStore {
       query_timeout: 15_000,
       idle_in_transaction_session_timeout: 30_000,
     });
-    pool.on("error", (err: Error) => {
+    pool.on('error', (err: Error) => {
       recordPgVectorError();
-      logger.error("pgvector pool error", { error: err.message });
+      logger.error('pgvector pool error', { error: err.message });
     });
     // Count query-level failures too (Aurora failover, statement timeout) so the
     // PgVectorUnreachable alert fires on more than just idle-client errors.

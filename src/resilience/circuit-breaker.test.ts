@@ -1,31 +1,31 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // The vendored breaker's state machine (trip, window decay, half-open probe,
 // recovery) is tested at its source of truth — nanohype/library/runtime.
 // These tests cover this app's wiring only: the config mapping in
 // `createBreaker` and the `circuit_breaker.open` gauge lifecycle.
-vi.mock("../metrics.js", () => ({ setCircuitBreakerOpen: vi.fn() }));
+vi.mock('../metrics.js', () => ({ setCircuitBreakerOpen: vi.fn() }));
 
-import { createBreaker, CircuitOpenError } from "./circuit-breaker.js";
-import { setCircuitBreakerOpen } from "../metrics.js";
+import { createBreaker, CircuitOpenError } from './circuit-breaker.js';
+import { setCircuitBreakerOpen } from '../metrics.js';
 
-const fail = () => Promise.reject(new Error("boom"));
-const ok = () => Promise.resolve("ok");
+const fail = () => Promise.reject(new Error('boom'));
+const ok = () => Promise.resolve('ok');
 
-describe("createBreaker (app wiring)", () => {
+describe('createBreaker (app wiring)', () => {
   beforeEach(() => {
     vi.mocked(setCircuitBreakerOpen).mockClear();
   });
 
-  it("trips at failureThreshold, raises the gauge once, and fails fast", async () => {
-    const breaker = createBreaker("wiring-trip", { failureThreshold: 2 });
+  it('trips at failureThreshold, raises the gauge once, and fails fast', async () => {
+    const breaker = createBreaker('wiring-trip', { failureThreshold: 2 });
 
-    await expect(breaker.exec(fail)).rejects.toThrow("boom");
+    await expect(breaker.exec(fail)).rejects.toThrow('boom');
     expect(setCircuitBreakerOpen).not.toHaveBeenCalled();
 
-    await expect(breaker.exec(fail)).rejects.toThrow("boom");
-    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith("wiring-trip", true);
-    expect(breaker.state()).toBe("open");
+    await expect(breaker.exec(fail)).rejects.toThrow('boom');
+    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith('wiring-trip', true);
+    expect(breaker.state()).toBe('open');
 
     // Fast-fail while open — the wrapped function is not invoked and the
     // gauge is not re-raised.
@@ -35,28 +35,28 @@ describe("createBreaker (app wiring)", () => {
     expect(setCircuitBreakerOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("lowers the gauge on every successful call", async () => {
-    const breaker = createBreaker("wiring-success", { failureThreshold: 3 });
+  it('lowers the gauge on every successful call', async () => {
+    const breaker = createBreaker('wiring-success', { failureThreshold: 3 });
 
-    await expect(breaker.exec(ok)).resolves.toBe("ok");
-    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith("wiring-success", false);
+    await expect(breaker.exec(ok)).resolves.toBe('ok');
+    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith('wiring-success', false);
   });
 
-  it("reset() force-closes and lowers the gauge", async () => {
-    const breaker = createBreaker("wiring-reset", { failureThreshold: 1 });
+  it('reset() force-closes and lowers the gauge', async () => {
+    const breaker = createBreaker('wiring-reset', { failureThreshold: 1 });
 
-    await expect(breaker.exec(fail)).rejects.toThrow("boom");
-    expect(breaker.state()).toBe("open");
+    await expect(breaker.exec(fail)).rejects.toThrow('boom');
+    expect(breaker.state()).toBe('open');
 
     breaker.reset();
-    expect(breaker.state()).toBe("closed");
-    expect(setCircuitBreakerOpen).toHaveBeenLastCalledWith("wiring-reset", false);
+    expect(breaker.state()).toBe('closed');
+    expect(setCircuitBreakerOpen).toHaveBeenLastCalledWith('wiring-reset', false);
   });
 
-  it("propagates results and errors transparently", async () => {
-    const breaker = createBreaker("wiring-passthrough");
+  it('propagates results and errors transparently', async () => {
+    const breaker = createBreaker('wiring-passthrough');
 
     await expect(breaker.exec(async () => 42)).resolves.toBe(42);
-    await expect(breaker.exec(fail)).rejects.toThrow("boom");
+    await expect(breaker.exec(fail)).rejects.toThrow('boom');
   });
 });

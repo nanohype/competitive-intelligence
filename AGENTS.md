@@ -50,7 +50,7 @@ metadata:
   namespace: tenants-protohype
 spec:
   platformRef: { name: competitive-intelligence }
-  monthlyUsd: "2500" # kill-switch fires at 120%
+  monthlyUsd: '2500' # kill-switch fires at 120%
   alertThresholdsPercent: [50, 80, 100]
   killSwitchEnabled: true
 ---

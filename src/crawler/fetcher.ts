@@ -1,6 +1,6 @@
-import { createBreaker, type CircuitBreaker } from "../resilience/circuit-breaker.js";
-import { logger } from "../logger.js";
-import { guardUrl } from "./url-guard.js";
+import { createBreaker, type CircuitBreaker } from '../resilience/circuit-breaker.js';
+import { logger } from '../logger.js';
+import { guardUrl } from './url-guard.js';
 
 export interface FetchResult {
   url: string;
@@ -51,7 +51,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
 
     try {
-      logger.debug("fetching", { url });
+      logger.debug('fetching', { url });
 
       // `redirect: "manual"` means a 3xx surfaces here as `response.ok ===
       // false` rather than silently routing to a destination that wasn't
@@ -59,10 +59,10 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
       // promote each redirect target to a first-class source.
       const response = await fetch(url, {
         signal: controller.signal,
-        redirect: "manual",
+        redirect: 'manual',
         headers: {
-          "User-Agent": options.userAgent,
-          Accept: "text/html,application/xhtml+xml",
+          'User-Agent': options.userAgent,
+          Accept: 'text/html,application/xhtml+xml',
         },
       });
 
@@ -73,7 +73,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
         throw new Error(`HTTP ${response.status} for ${url}`);
       }
 
-      const contentLength = response.headers.get("content-length");
+      const contentLength = response.headers.get('content-length');
       if (contentLength && Number(contentLength) > maxBytes) {
         throw new Error(`response too large: ${contentLength} bytes (max ${maxBytes})`);
       }
@@ -84,7 +84,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
         headers[k] = v;
       });
 
-      logger.info("fetched", { url, status: response.status, bytes: html.length });
+      logger.info('fetched', { url, status: response.status, bytes: html.length });
 
       return {
         url,
@@ -100,7 +100,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
 }
 
 async function readBodyCapped(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return "";
+  if (!response.body) return '';
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -117,5 +117,5 @@ async function readBodyCapped(response: Response, maxBytes: number): Promise<str
   } finally {
     reader.releaseLock();
   }
-  return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
+  return new TextDecoder('utf-8').decode(Buffer.concat(chunks));
 }

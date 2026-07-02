@@ -7,7 +7,7 @@ on:
     branches: [main]
   schedule:
     # Weekly Tuesday 06:00 UTC — catches new CVEs even when no PRs land.
-    - cron: "0 6 * * 2"
+    - cron: '0 6 * * 2'
 
 permissions:
   contents: read
@@ -54,7 +54,7 @@ jobs:
           scan-ref: Dockerfile
           severity: HIGH,CRITICAL
           limit-severities-for-sarif: true
-          exit-code: "0"
+          exit-code: '0'
           format: sarif
           output: trivy-config.sarif
       - uses: github/codeql-action/upload-sarif@v3
@@ -72,7 +72,7 @@ jobs:
           scan-ref: Dockerfile
           severity: HIGH,CRITICAL
           format: table
-          exit-code: "1"
+          exit-code: '1'
           skip-db-update: true
 
   trivy-fs:
@@ -91,11 +91,11 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           limit-severities-for-sarif: true
-          exit-code: "0"
+          exit-code: '0'
           ignore-unfixed: true
           format: sarif
           output: trivy-fs.sarif
-          skip-dirs: "node_modules"
+          skip-dirs: 'node_modules'
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
@@ -111,6 +111,6 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           format: table
-          exit-code: "1"
-          skip-dirs: "node_modules"
+          exit-code: '1'
+          skip-dirs: 'node_modules'
           skip-db-update: true

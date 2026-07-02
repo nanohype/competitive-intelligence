@@ -3,7 +3,7 @@ name: competitive-intelligence
 description: Competitive intelligence radar — crawls competitor sites, semantic-diffs changes, alerts Slack.
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: '0.1.0'
 maintainers:
   - name: protohype
 dependencies:

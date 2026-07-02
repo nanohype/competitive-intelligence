@@ -20,18 +20,18 @@ spec:
               elements:
                 - name: competitive-intelligence
                   path: chart
-                  syncWave: "100"
+                  syncWave: '100'
   template:
     metadata:
       name: 'competitive-intelligence-{{ index .metadata.labels "environment" }}'
       annotations:
-        argocd.argoproj.io/sync-wave: "{{`{{syncWave}}`}}"
+        argocd.argoproj.io/sync-wave: '{{`{{syncWave}}`}}'
     spec:
       project: tenant-protohype
       sources:
         - repoURL: https://github.com/nanohype/competitive-intelligence.git
           targetRevision: main
-          path: "{{`{{path}}`}}"
+          path: '{{`{{path}}`}}'
           helm:
             valueFiles:
               - $values/{{`{{path}}`}}/values.yaml
@@ -40,7 +40,7 @@ spec:
           targetRevision: main
           ref: values
       destination:
-        server: "{{`{{server}}`}}"
+        server: '{{`{{server}}`}}'
         namespace: tenants-protohype
       syncPolicy:
         automated:

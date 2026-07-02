@@ -1,28 +1,28 @@
-import { z } from "zod";
-import "dotenv/config";
+import { z } from 'zod';
+import 'dotenv/config';
 
-const logLevelSchema = z.enum(["debug", "info", "warn", "error"]).default("info");
+const logLevelSchema = z.enum(['debug', 'info', 'warn', 'error']).default('info');
 
 const schema = z
   .object({
-    llmProvider: z.enum(["bedrock", "anthropic", "openai"]).default("bedrock"),
-    embeddingProvider: z.enum(["bedrock", "openai"]).default("bedrock"),
+    llmProvider: z.enum(['bedrock', 'anthropic', 'openai']).default('bedrock'),
+    embeddingProvider: z.enum(['bedrock', 'openai']).default('bedrock'),
     anthropicApiKey: z.string().optional(),
     openaiApiKey: z.string().optional(),
 
-    awsRegion: z.string().default("us-east-1"),
-    bedrockLlmModel: z.string().default("us.anthropic.claude-sonnet-4-20250514-v1:0"),
-    bedrockEmbeddingModel: z.string().default("amazon.titan-embed-text-v2:0"),
+    awsRegion: z.string().default('us-east-1'),
+    bedrockLlmModel: z.string().default('us.anthropic.claude-sonnet-4-20250514-v1:0'),
+    bedrockEmbeddingModel: z.string().default('amazon.titan-embed-text-v2:0'),
 
     // Direct-API model IDs for the non-Bedrock providers (injectable, not
     // hardcoded). Anthropic-direct uses the bare current Sonnet alias.
-    anthropicLlmModel: z.string().default("claude-sonnet-4-6"),
-    openaiLlmModel: z.string().default("gpt-4o"),
+    anthropicLlmModel: z.string().default('claude-sonnet-4-6'),
+    openaiLlmModel: z.string().default('gpt-4o'),
 
-    embeddingModel: z.string().default("text-embedding-3-small"),
+    embeddingModel: z.string().default('text-embedding-3-small'),
     embeddingDimensions: z.number().default(1024),
 
-    vectorProvider: z.enum(["memory", "pgvector"]).default("memory"),
+    vectorProvider: z.enum(['memory', 'pgvector']).default('memory'),
     databaseUrl: z.string().optional(),
     // Path to a mounted CA bundle (e.g. the Amazon RDS global CA) for verifying
     // the pgvector TLS connection. Unset → Node's built-in trust store.
@@ -30,40 +30,40 @@ const schema = z
 
     crawlIntervalMinutes: z.number().default(60),
     crawlTimeoutMs: z.number().default(30_000),
-    userAgent: z.string().default("competitive-intelligence/0.1.0"),
+    userAgent: z.string().default('competitive-intelligence/0.1.0'),
 
     slackBotToken: z.string().optional(),
     slackSigningSecret: z.string().optional(),
     slackAppToken: z.string().optional(),
-    slackAlertChannel: z.string().default("#competitive-intel"),
+    slackAlertChannel: z.string().default('#competitive-intel'),
 
     significanceThreshold: z.number().min(0).max(1).default(0.3),
 
     port: z.number().default(3000),
-    nodeEnv: z.enum(["development", "production", "test"]).default("development"),
+    nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
     logLevel: logLevelSchema,
   })
   .superRefine((data, ctx) => {
     // Direct API providers require their keys
-    if (data.llmProvider === "anthropic" && !data.anthropicApiKey) {
+    if (data.llmProvider === 'anthropic' && !data.anthropicApiKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic",
-        path: ["anthropicApiKey"],
+        message: 'ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic',
+        path: ['anthropicApiKey'],
       });
     }
-    if (data.llmProvider === "openai" && !data.openaiApiKey) {
+    if (data.llmProvider === 'openai' && !data.openaiApiKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "OPENAI_API_KEY is required when LLM_PROVIDER=openai",
-        path: ["openaiApiKey"],
+        message: 'OPENAI_API_KEY is required when LLM_PROVIDER=openai',
+        path: ['openaiApiKey'],
       });
     }
-    if (data.embeddingProvider === "openai" && !data.openaiApiKey) {
+    if (data.embeddingProvider === 'openai' && !data.openaiApiKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai",
-        path: ["openaiApiKey"],
+        message: 'OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai',
+        path: ['openaiApiKey'],
       });
     }
     // Bedrock uses AWS credential chain — no key validation needed
@@ -73,8 +73,8 @@ const schema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "SLACK_SIGNING_SECRET is required in HTTP mode (no SLACK_APP_TOKEN). Set SLACK_APP_TOKEN for Socket Mode or provide SLACK_SIGNING_SECRET.",
-        path: ["slackSigningSecret"],
+          'SLACK_SIGNING_SECRET is required in HTTP mode (no SLACK_APP_TOKEN). Set SLACK_APP_TOKEN for Socket Mode or provide SLACK_SIGNING_SECRET.',
+        path: ['slackSigningSecret'],
       });
     }
   });

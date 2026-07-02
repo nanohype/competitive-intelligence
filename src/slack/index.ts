@@ -1,13 +1,13 @@
-import { App } from "@slack/bolt";
-import type { KnownBlock } from "@slack/types";
-import type { Config } from "../config.js";
-import type { IntelEngine } from "../intel/index.js";
-import type { AlertSink } from "../alerts/index.js";
-import type { SlackBlocks } from "../alerts/formatter.js";
-import { registerHandlers } from "./handlers.js";
-import { registerCommands } from "./commands.js";
-import { logger } from "../logger.js";
-import { createBreaker } from "../resilience/circuit-breaker.js";
+import { App } from '@slack/bolt';
+import type { KnownBlock } from '@slack/types';
+import type { Config } from '../config.js';
+import type { IntelEngine } from '../intel/index.js';
+import type { AlertSink } from '../alerts/index.js';
+import type { SlackBlocks } from '../alerts/formatter.js';
+import { registerHandlers } from './handlers.js';
+import { registerCommands } from './commands.js';
+import { logger } from '../logger.js';
+import { createBreaker } from '../resilience/circuit-breaker.js';
 
 // Bound the Slack API call so a hung postMessage can't stall the crawl loop
 // (the sink is awaited inside the single-writer crawl mutex).
@@ -23,7 +23,7 @@ export interface SlackBot {
 export function createSlackBot(
   config: Config,
   intel: IntelEngine,
-  runCrawl: () => Promise<"ran" | "skipped">,
+  runCrawl: () => Promise<'ran' | 'skipped'>,
 ): SlackBot {
   const app = new App({
     token: config.slackBotToken,
@@ -40,7 +40,7 @@ export function createSlackBot(
   // Alert sink that posts to Slack channels — wrapped in a circuit breaker like
   // every other external call, so a degraded Slack endpoint fails fast instead
   // of stalling the crawl loop on every diff.
-  const breaker = createBreaker("slack-alerts", { failureThreshold: 3 });
+  const breaker = createBreaker('slack-alerts', { failureThreshold: 3 });
   const sink: AlertSink = {
     async send(channel: string, message: SlackBlocks) {
       await breaker.exec(() =>
@@ -60,14 +60,14 @@ export function createSlackBot(
     async start() {
       if (config.slackAppToken) {
         await app.start();
-        logger.info("slack bot started (socket mode)");
+        logger.info('slack bot started (socket mode)');
       } else {
         // HTTP mode: the Bolt receiver must actually listen, or no Slack events
         // arrive. Bind it one port above the health server (which owns
         // config.port) so the two HTTP servers don't collide.
         const eventsPort = config.port + 1;
         await app.start(eventsPort);
-        logger.info("slack bot started (http mode)", {
+        logger.info('slack bot started (http mode)', {
           eventsPort,
           healthPort: config.port,
         });
@@ -75,7 +75,7 @@ export function createSlackBot(
     },
     async stop() {
       await app.stop();
-      logger.info("slack bot stopped");
+      logger.info('slack bot stopped');
     },
   };
 }
