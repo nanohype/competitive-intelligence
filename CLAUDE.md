@@ -24,8 +24,10 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 
 ## Architecture
 
-- **src/providers/** — Self-registering provider registry. LLM (`llm.ts`: Bedrock/Anthropic/OpenAI), embeddings (`embeddings.ts`: Bedrock Titan/OpenAI), vector store (`vectors.ts`: `MemoryVectorStore` for dev/tests + `PgVectorStore` for durable production, both behind the `VectorStore` interface). All via `createRegistry<T>()`. The Bedrock LLM marks a Converse `cachePoint` after the static analysis system prompt — token usage is emitted per kind as `bedrock.{input,output,cache_read,cache_write}_tokens` so cache effectiveness is measurable. Every external call carries an explicit timeout (Bedrock via `requestHandler` + an `AbortSignal.timeout` deadline, Anthropic/OpenAI via the SDK `timeout` option).
+- **src/providers/** — Self-registering provider registry. LLM (`llm.ts`: Bedrock/Anthropic/OpenAI), embeddings (`embeddings.ts`: Bedrock Titan/OpenAI), vector store (`vectors.ts`: `MemoryVectorStore` for dev/tests + `PgVectorStore` for durable production, both behind the `VectorStore` interface). All via the vendored `createRegistry<T>()`. The Bedrock LLM marks a Converse `cachePoint` after the static analysis system prompt — token usage is emitted per kind as `bedrock.{input,output,cache_read,cache_write}_tokens` so cache effectiveness is measurable. Every external call carries an explicit timeout (Bedrock via `requestHandler` + an `AbortSignal.timeout` deadline, Anthropic/OpenAI via the SDK `timeout` option).
 - **src/crawler/** — HTTP fetcher with per-host circuit breakers, HTML→text via cheerio scoped by `selectors`. SSRF-guarded (`url-guard.ts`) — every outbound URL rejects loopback/RFC1918/link-local/metadata addresses before the fetch. Sequential crawling. `sources.ts` Zod-validates `sources.json` on load.
+- **src/vendor/runtime/** — Vendored `@nanohype/runtime` modules: `circuit-breaker.ts` (sliding-window breaker, injectable clock) and `registry.ts` (`createRegistry<T>`). Byte-identical copies of `nanohype/library/runtime` — the same consumption model as the vendored `tenant-chart-base` chart. `scripts/sync-runtime.mjs` (re)writes the copies from a nanohype checkout (`NANOHYPE_DIR`, default `../nanohype`); CI runs it with `--check` and fails on drift. Never edit these locally — fix upstream, re-sync.
+- **src/resilience/** — App wiring over the vendored breaker: `createBreaker(name, opts)` maps `failureThreshold`/`windowMs`/`halfOpenAfterMs` (defaults 5 / 5 min / 60 s) and raises/lowers the `circuit_breaker.open` gauge on trip/success/reset. The breaker trips on failure density within the rolling window, not on a consecutive count.
 - **src/pipeline/** — Recursive text chunker with overlap → embed → semantic diff against stored vectors → `deleteByMetadata` old chunks → upsert new. Holds the cold-start baseline guard.
 - **src/intel/** — Query facade: embed question → vector search → LLM-generated answer with context. `analysis.ts` holds the LLM change analysis (significance + signal extraction) and the cached analysis/query system prompts.
 - **src/alerts/** — Threshold gating on change score → LLM analysis → Slack Block Kit formatting → dispatch through the alert sink.
@@ -48,6 +50,7 @@ npm test             # vitest run
 npm run lint         # ESLint
 npm run typecheck    # tsc --noEmit
 npm run format:check # prettier --check
+npm run sync:runtime # re-vendor src/vendor/runtime/ from ../nanohype (":check" = drift gate)
 ```
 
 Chart + container:
@@ -89,8 +92,9 @@ Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment
 - Node ≥ 24
 - Zod for all validation (config, sources, log level)
 - Structured JSON logging to stderr (`src/logger.ts`) — stdout reserved for CLI display; OTel `trace_id`/`span_id` correlated
-- Provider registry pattern: `createRegistry<T>(kind)` returns typed `{ register, get, has, names }`
-- Circuit breaker for external calls — per-host for the HTTP fetcher, per-provider for LLM and embeddings
+- Provider registry pattern: `createRegistry<T>(kind)` returns typed `{ register, get, has, names }` — vendored from `@nanohype/runtime`
+- Circuit breaker for external calls — per-host for the HTTP fetcher, per-provider for LLM and embeddings. Sliding-window semantics (vendored from `@nanohype/runtime`, wired via `src/resilience/`): trips on failure density within the window, single half-open probe after the cooldown
+- Vendored modules under `src/vendor/runtime/` stay byte-identical to `nanohype/library/runtime` — behavior changes land upstream with their tests, then `npm run sync:runtime` here (`sync:runtime:check` is the CI drift gate)
 - Bedrock-default LLM; prompt-cached analysis system prompt via Converse `cachePoint`
 - No framework lock-in for LLMs — direct SDK calls via the provider interface
 - Single-writer: `replicaCount: 1`; the crawl mutex prevents overlapping scheduler + slash-command runs (no horizontal scale without leader election)
@@ -99,12 +103,14 @@ Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment
 
 Tests are colocated as `src/**/*.test.ts`. Run with `npm test`.
 
-- `src/providers/registry.test.ts` — registry factory (register, get, has, names, fresh instances)
 - `src/providers/vectors.test.ts` — memory store (upsert, search, filter, deleteByMetadata, count)
 - `src/pipeline/chunker.test.ts` — recursive text splitting (short, long, IDs, overlap)
 - `src/pipeline/differ.test.ts` — semantic diff (empty store → baseline, high similarity, custom threshold)
-- `src/resilience/circuit-breaker.test.ts` — trip, half-open probe, recovery
+- `src/resilience/circuit-breaker.test.ts` — app wiring over the vendored breaker (config mapping, `circuit_breaker.open` gauge lifecycle)
+- `src/crawler/fetcher.test.ts` — fetch-pipeline breaker wiring (per-host trip, window decay, half-open recovery, SSRF guard before the breaker)
 - `src/crawler/url-guard.test.ts` — SSRF guard (scheme, loopback, RFC1918, link-local/metadata, IPv6)
+
+Vendored `src/vendor/runtime/` logic (breaker state machine, registry factory) is unit-tested at its source of truth — `nanohype/library/runtime` — not duplicated here.
 
 When adding tests: mock providers by implementing the interface directly (`LlmProvider` / `EmbeddingProvider` / `VectorStore`) — don't mock SDK internals. Cover the cold-start path (empty store → baseline, no alerts) when touching the pipeline or a vector backend.
 

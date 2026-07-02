@@ -1,4 +1,4 @@
-import { CircuitBreaker } from "../resilience/circuit-breaker.js";
+import { createBreaker, type CircuitBreaker } from "../resilience/circuit-breaker.js";
 import { logger } from "../logger.js";
 import { guardUrl } from "./url-guard.js";
 
@@ -26,9 +26,12 @@ function breakerFor(url: string): CircuitBreaker {
   const host = new URL(url).hostname;
   let breaker = breakers.get(host);
   if (!breaker) {
-    breaker = new CircuitBreaker(`http:${host}`, {
+    // 3 failures within the 5-minute default window trips the host (a
+    // hard-down host fails 3 sequential fetches well inside one window);
+    // 2-minute cooldown before the half-open probe.
+    breaker = createBreaker(`http:${host}`, {
       failureThreshold: 3,
-      resetTimeoutMs: 120_000,
+      halfOpenAfterMs: 120_000,
     });
     breakers.set(host, breaker);
   }
@@ -43,7 +46,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
   // tracked.
   await guardUrl(url);
 
-  return breakerFor(url).execute(async () => {
+  return breakerFor(url).exec(async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
 

@@ -29,7 +29,8 @@ Tests run on Vitest (`npm test`), colocated as `src/**/*.test.ts`. The contract:
 
 1. **Mock providers by implementing the interface, not SDK internals.** Every external boundary goes through a typed interface — `LlmProvider`, `EmbeddingProvider`, `VectorStore` — selected by the registry. A test supplies a fake that implements the interface; it does **not** `vi.mock(<sdk-package>)` or patch the AWS/Slack/cheerio SDK. The differ, pipeline, and intel tests all run against in-process fakes this way.
 2. **New boundary code needs an interface-injected test.** Adding a provider or vector backend means adding a test that drives the new implementation (or a fake of it) through the same interface the rest of the system uses.
-3. **New pure logic needs a direct test.** The chunker, differ, circuit breaker, and URL guard are pure (or near-pure) and tested directly — see `src/pipeline/chunker.test.ts`, `src/pipeline/differ.test.ts`, `src/resilience/circuit-breaker.test.ts`, `src/crawler/url-guard.test.ts`.
+3. **New pure logic needs a direct test.** The chunker, differ, and URL guard are pure (or near-pure) and tested directly — see `src/pipeline/chunker.test.ts`, `src/pipeline/differ.test.ts`, `src/crawler/url-guard.test.ts`.
+4. **Vendored logic is tested upstream; wiring is tested here.** `src/vendor/runtime/` modules carry their unit tests at the source of truth (`nanohype/library/runtime`) — don't duplicate them. Local tests cover this app's wiring of them: `src/resilience/circuit-breaker.test.ts` (config mapping + gauge lifecycle) and `src/crawler/fetcher.test.ts` (per-host trip, window decay, half-open recovery in the fetch pipeline).
 
 Cover the cold-start path when you touch the pipeline or a vector backend: empty store → baseline (no alerts); populated store → real diffs.
 
@@ -42,10 +43,10 @@ Sources are data, not code — edit `sources.json` (validated against the Zod sc
 
 ## Adding an LLM or embedding provider
 
-1. Implement `LlmProvider` (`chat`) in `src/providers/llm.ts` or `EmbeddingProvider` (`embed`) in `src/providers/embeddings.ts`, wrapping the external call in a `CircuitBreaker` like the existing providers.
+1. Implement `LlmProvider` (`chat`) in `src/providers/llm.ts` or `EmbeddingProvider` (`embed`) in `src/providers/embeddings.ts`, wrapping the external call in a `createBreaker` circuit breaker like the existing providers.
 2. Register it in `bootstrapLlm` / `bootstrapEmbeddings` (gate on the credential it needs), and widen the `llmProvider` / `embeddingProvider` Zod enum in `src/config.ts`.
 3. Add the env var to `.env.example`. Keep Bedrock the default — new non-Anthropic LLM providers stay opt-in (LLM policy).
-4. Add a `src/providers/registry.test.ts`-style test driving the new implementation through its interface — no SDK mocking.
+4. Add a `src/providers/vectors.test.ts`-style test driving the new implementation through its interface — no SDK mocking.
 
 ## Adding a vector backend
 

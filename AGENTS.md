@@ -106,13 +106,13 @@ Sources are data, not code — they live in `sources.json` (validated with Zod o
 
 ## Add an LLM or embedding provider
 
-LLM and embeddings each go through a self-registering registry (`createRegistry<T>()` in `src/providers/registry.ts`). Built-ins: LLM = Bedrock (default) / Anthropic / OpenAI; embeddings = Bedrock Titan (default) / OpenAI. To add one:
+LLM and embeddings each go through a self-registering registry (`createRegistry<T>()`, vendored from `@nanohype/runtime` at `src/vendor/runtime/registry.ts`). Built-ins: LLM = Bedrock (default) / Anthropic / OpenAI; embeddings = Bedrock Titan (default) / OpenAI. To add one:
 
-1. **Implement the interface** — write a class implementing `LlmProvider` (`chat(system, userMessage)`) in `src/providers/llm.ts` or `EmbeddingProvider` (`embed(texts)`) in `src/providers/embeddings.ts`. Wrap the external call in a `CircuitBreaker` (mirror the existing `failureThreshold: 3` per-provider breakers).
+1. **Implement the interface** — write a class implementing `LlmProvider` (`chat(system, userMessage)`) in `src/providers/llm.ts` or `EmbeddingProvider` (`embed(texts)`) in `src/providers/embeddings.ts`. Wrap the external call in a `createBreaker` circuit breaker (mirror the existing `failureThreshold: 3` per-provider breakers).
 2. **Register it in the bootstrap** — add a `registry.register("<name>", () => new YourProvider(...))` line in `bootstrapLlm` / `bootstrapEmbeddings`. Gate it on the credential it needs (the Anthropic/OpenAI registrations only happen when their key is present).
 3. **Widen the config enum** — add `<name>` to the `llmProvider` / `embeddingProvider` Zod enum in `src/config.ts` and document the env var in `.env.example`.
 4. **Keep Bedrock the default.** New non-Anthropic LLM providers stay opt-in — `bedrock` is the default and the LLM policy forbids defaulting to a non-Anthropic model.
-5. **Test it** — implement the interface against a fake; don't mock SDK internals. See `src/providers/registry.test.ts` for the pattern.
+5. **Test it** — implement the interface against a fake; don't mock SDK internals. See `src/providers/vectors.test.ts` for the pattern.
 
 ## Add a vector backend
 
@@ -128,7 +128,8 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 - **Provider registry, not inline construction.** LLM / embeddings / vectors are each a `createRegistry<T>(kind)` returning typed `{ register, get, has, names }`. Pick the implementation by config; `src/index.ts` is the only place real clients are built. Swapping a backend is a one-file change to the bootstrap.
 - **Bedrock-default LLM.** Bedrock (Converse for the LLM, Titan for embeddings) is the default and runs on the AWS credential chain — EKS Pod Identity on the cluster, no keys. Anthropic/OpenAI are alternates that only register when their key is present.
 - **Prompt caching.** The analysis system prompt is identical on every diff, so the Converse request marks a `cachePoint` after the system block. Cache hits are emitted as a metric — see `ARCHITECTURE.md` § Prompt caching.
-- **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings, and around the Slack alert sink. Threshold-based, no library.
+- **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings, and around the Slack alert sink. Sliding-window semantics (trips on failure density within a rolling window, single half-open probe after the cooldown), vendored from `@nanohype/runtime` and wired through `src/resilience/`.
+- **Vendored runtime modules stay byte-identical.** `src/vendor/runtime/` is a copy of `nanohype/library/runtime` modules — never edit locally. Fix upstream (with tests), then `npm run sync:runtime`; CI's drift check fails on any divergence, exactly like the vendored `tenant-chart-base` chart.
 - **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler runs one global crawl over all sources on an interval; an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
 - **SSRF-guarded crawling.** Every outbound crawl URL passes `guardUrl` (`src/crawler/url-guard.ts`) — rejects loopback, RFC1918, link-local, and cloud-metadata addresses before the fetch.
 - TypeScript strict, ESM NodeNext, Node ≥ 24. Zod at every boundary (config, sources, log level, LLM analysis output). Structured JSON logging to stderr via a hand-rolled logger (`src/logger.ts`); stdout is reserved for CLI output. Explicit timeouts on every external call (Bedrock/Anthropic/OpenAI, pgvector, Slack).

@@ -1,75 +1,62 @@
-import { describe, it, expect } from "vitest";
-import { CircuitBreaker } from "./circuit-breaker.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-describe("CircuitBreaker", () => {
-  it("passes through successful calls", async () => {
-    const cb = new CircuitBreaker("test");
-    const result = await cb.execute(async () => 42);
-    expect(result).toBe(42);
+// The vendored breaker's state machine (trip, window decay, half-open probe,
+// recovery) is tested at its source of truth — nanohype/library/runtime.
+// These tests cover this app's wiring only: the config mapping in
+// `createBreaker` and the `circuit_breaker.open` gauge lifecycle.
+vi.mock("../metrics.js", () => ({ setCircuitBreakerOpen: vi.fn() }));
+
+import { createBreaker, CircuitOpenError } from "./circuit-breaker.js";
+import { setCircuitBreakerOpen } from "../metrics.js";
+
+const fail = () => Promise.reject(new Error("boom"));
+const ok = () => Promise.resolve("ok");
+
+describe("createBreaker (app wiring)", () => {
+  beforeEach(() => {
+    vi.mocked(setCircuitBreakerOpen).mockClear();
   });
 
-  it("propagates errors from the wrapped function", async () => {
-    const cb = new CircuitBreaker("test");
-    await expect(
-      cb.execute(async () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
+  it("trips at failureThreshold, raises the gauge once, and fails fast", async () => {
+    const breaker = createBreaker("wiring-trip", { failureThreshold: 2 });
+
+    await expect(breaker.exec(fail)).rejects.toThrow("boom");
+    expect(setCircuitBreakerOpen).not.toHaveBeenCalled();
+
+    await expect(breaker.exec(fail)).rejects.toThrow("boom");
+    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith("wiring-trip", true);
+    expect(breaker.state()).toBe("open");
+
+    // Fast-fail while open — the wrapped function is not invoked and the
+    // gauge is not re-raised.
+    const probe = vi.fn(ok);
+    await expect(breaker.exec(probe)).rejects.toBeInstanceOf(CircuitOpenError);
+    expect(probe).not.toHaveBeenCalled();
+    expect(setCircuitBreakerOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("trips open after reaching failure threshold", async () => {
-    const cb = new CircuitBreaker("test", { failureThreshold: 2 });
-    const fail = () =>
-      cb.execute(async () => {
-        throw new Error("fail");
-      });
+  it("lowers the gauge on every successful call", async () => {
+    const breaker = createBreaker("wiring-success", { failureThreshold: 3 });
 
-    await expect(fail()).rejects.toThrow("fail");
-    await expect(fail()).rejects.toThrow("fail");
-    // Now open — should throw circuit breaker error, not "fail"
-    await expect(fail()).rejects.toThrow('Circuit breaker "test" is open');
+    await expect(breaker.exec(ok)).resolves.toBe("ok");
+    expect(setCircuitBreakerOpen).toHaveBeenCalledExactlyOnceWith("wiring-success", false);
   });
 
-  it("transitions to half-open after reset timeout", async () => {
-    const cb = new CircuitBreaker("test", {
-      failureThreshold: 1,
-      resetTimeoutMs: 10,
-    });
+  it("reset() force-closes and lowers the gauge", async () => {
+    const breaker = createBreaker("wiring-reset", { failureThreshold: 1 });
 
-    // Trip it
-    await expect(
-      cb.execute(async () => {
-        throw new Error("fail");
-      }),
-    ).rejects.toThrow("fail");
+    await expect(breaker.exec(fail)).rejects.toThrow("boom");
+    expect(breaker.state()).toBe("open");
 
-    // Wait for reset timeout
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Should allow one probe call through (half-open)
-    const result = await cb.execute(async () => "recovered");
-    expect(result).toBe("recovered");
+    breaker.reset();
+    expect(breaker.state()).toBe("closed");
+    expect(setCircuitBreakerOpen).toHaveBeenLastCalledWith("wiring-reset", false);
   });
 
-  it("resets fully after successful half-open probe", async () => {
-    const cb = new CircuitBreaker("test", {
-      failureThreshold: 1,
-      resetTimeoutMs: 10,
-    });
+  it("propagates results and errors transparently", async () => {
+    const breaker = createBreaker("wiring-passthrough");
 
-    await expect(
-      cb.execute(async () => {
-        throw new Error("fail");
-      }),
-    ).rejects.toThrow("fail");
-
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Successful probe resets the breaker
-    await cb.execute(async () => "ok");
-
-    // Now should work normally
-    const result = await cb.execute(async () => "still ok");
-    expect(result).toBe("still ok");
+    await expect(breaker.exec(async () => 42)).resolves.toBe(42);
+    await expect(breaker.exec(fail)).rejects.toThrow("boom");
   });
 });

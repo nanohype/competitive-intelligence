@@ -7,7 +7,7 @@ import type { SlackBlocks } from "../alerts/formatter.js";
 import { registerHandlers } from "./handlers.js";
 import { registerCommands } from "./commands.js";
 import { logger } from "../logger.js";
-import { CircuitBreaker } from "../resilience/circuit-breaker.js";
+import { createBreaker } from "../resilience/circuit-breaker.js";
 
 // Bound the Slack API call so a hung postMessage can't stall the crawl loop
 // (the sink is awaited inside the single-writer crawl mutex).
@@ -40,10 +40,10 @@ export function createSlackBot(
   // Alert sink that posts to Slack channels — wrapped in a circuit breaker like
   // every other external call, so a degraded Slack endpoint fails fast instead
   // of stalling the crawl loop on every diff.
-  const breaker = new CircuitBreaker("slack-alerts", { failureThreshold: 3 });
+  const breaker = createBreaker("slack-alerts", { failureThreshold: 3 });
   const sink: AlertSink = {
     async send(channel: string, message: SlackBlocks) {
-      await breaker.execute(() =>
+      await breaker.exec(() =>
         app.client.chat.postMessage({
           token: config.slackBotToken,
           channel,
