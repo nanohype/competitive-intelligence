@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import { createRegistry } from "./registry.js";
+import { createRegistry } from "../vendor/runtime/registry.js";
 import type { Config } from "../config.js";
-import { CircuitBreaker } from "../resilience/circuit-breaker.js";
+import { createBreaker } from "../resilience/circuit-breaker.js";
 
 // Hard deadlines for every embedding call — embeddings run sequentially on the
 // single-writer crawl path, so a hung call stalls the whole crawl. See llm.ts.
@@ -24,7 +24,7 @@ export const embeddingRegistry = createRegistry<EmbeddingProvider>("embedding");
 
 class BedrockEmbeddingProvider implements EmbeddingProvider {
   private client: BedrockRuntimeClient;
-  private breaker = new CircuitBreaker("bedrock-embeddings", { failureThreshold: 3 });
+  private breaker = createBreaker("bedrock-embeddings", { failureThreshold: 3 });
   private modelId: string;
   readonly dimensions: number;
 
@@ -45,7 +45,7 @@ class BedrockEmbeddingProvider implements EmbeddingProvider {
     // Titan embedding API takes one text at a time — call in sequence
     const results: number[][] = [];
     for (const text of texts) {
-      const embedding = await this.breaker.execute(async () => {
+      const embedding = await this.breaker.exec(async () => {
         const response = await this.client.send(
           new InvokeModelCommand({
             modelId: this.modelId,
@@ -72,7 +72,7 @@ class BedrockEmbeddingProvider implements EmbeddingProvider {
 
 class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private client: OpenAI;
-  private breaker = new CircuitBreaker("openai-embeddings", { failureThreshold: 3 });
+  private breaker = createBreaker("openai-embeddings", { failureThreshold: 3 });
   readonly dimensions: number;
   private model: string;
 
@@ -88,7 +88,7 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
     const all: number[][] = [];
     for (let i = 0; i < texts.length; i += OPENAI_EMBED_BATCH) {
       const window = texts.slice(i, i + OPENAI_EMBED_BATCH);
-      const batch = await this.breaker.execute(async () => {
+      const batch = await this.breaker.exec(async () => {
         const response = await this.client.embeddings.create({
           model: this.model,
           input: window,

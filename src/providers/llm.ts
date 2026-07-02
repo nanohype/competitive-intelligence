@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
-import { createRegistry } from "./registry.js";
-import { CircuitBreaker } from "../resilience/circuit-breaker.js";
+import { createRegistry } from "../vendor/runtime/registry.js";
+import { createBreaker } from "../resilience/circuit-breaker.js";
 import { recordBedrockTokens } from "../metrics.js";
 import type { Config } from "../config.js";
 
@@ -31,7 +31,7 @@ export const llmRegistry = createRegistry<LlmProvider>("llm");
 
 class BedrockLlmProvider implements LlmProvider {
   private client: BedrockRuntimeClient;
-  private breaker = new CircuitBreaker("bedrock-llm", { failureThreshold: 3 });
+  private breaker = createBreaker("bedrock-llm", { failureThreshold: 3 });
   private modelId: string;
 
   constructor(region: string, modelId: string) {
@@ -47,7 +47,7 @@ class BedrockLlmProvider implements LlmProvider {
   }
 
   async chat(system: string, userMessage: string): Promise<LlmResponse> {
-    return this.breaker.execute(async () => {
+    return this.breaker.exec(async () => {
       const response = await this.client.send(
         new ConverseCommand({
           modelId: this.modelId,
@@ -95,7 +95,7 @@ class BedrockLlmProvider implements LlmProvider {
 
 class AnthropicProvider implements LlmProvider {
   private client: Anthropic;
-  private breaker = new CircuitBreaker("anthropic-llm", { failureThreshold: 3 });
+  private breaker = createBreaker("anthropic-llm", { failureThreshold: 3 });
   private model: string;
 
   constructor(apiKey: string, model: string) {
@@ -104,7 +104,7 @@ class AnthropicProvider implements LlmProvider {
   }
 
   async chat(system: string, userMessage: string): Promise<LlmResponse> {
-    return this.breaker.execute(async () => {
+    return this.breaker.exec(async () => {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 4096,
@@ -132,7 +132,7 @@ class AnthropicProvider implements LlmProvider {
 
 class OpenAILlmProvider implements LlmProvider {
   private client: OpenAI;
-  private breaker = new CircuitBreaker("openai-llm", { failureThreshold: 3 });
+  private breaker = createBreaker("openai-llm", { failureThreshold: 3 });
   private model: string;
 
   constructor(apiKey: string, model: string) {
@@ -141,7 +141,7 @@ class OpenAILlmProvider implements LlmProvider {
   }
 
   async chat(system: string, userMessage: string): Promise<LlmResponse> {
-    return this.breaker.execute(async () => {
+    return this.breaker.exec(async () => {
       const response = await this.client.chat.completions.create({
         model: this.model,
         max_tokens: 4096,

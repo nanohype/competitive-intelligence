@@ -6,3 +6,7 @@ docs
 
 chart/templates
 chart/dashboards
+
+# Byte-identical copies of @nanohype/runtime modules, formatted at their
+# source of truth — local formatting would be drift.
+src/vendor

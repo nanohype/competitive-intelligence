@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import type { Config } from "../config.js";
-import { createRegistry } from "./registry.js";
+import { createRegistry } from "../vendor/runtime/registry.js";
 import { logger } from "../logger.js";
 import { recordPgVectorError } from "../metrics.js";
 

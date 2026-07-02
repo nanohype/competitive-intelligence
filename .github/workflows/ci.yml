@@ -85,3 +85,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t competitive-intelligence:ci .
+
+  vendor-drift:
+    name: vendored runtime drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # src/vendor/runtime/ carries byte-identical copies of
+      # nanohype/library/runtime modules (same consumption model as the
+      # vendored tenant-chart-base chart). A copy that drifts from the
+      # source of truth is the defect — fixes propagate outward from the
+      # library, never inward.
+      - name: Checkout nanohype (runtime library source of truth)
+        uses: actions/checkout@v4
+        with:
+          repository: nanohype/nanohype
+          path: .nanohype
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Vendored runtime drift check
+        run: node scripts/sync-runtime.mjs --check
+        env:
+          NANOHYPE_DIR: .nanohype

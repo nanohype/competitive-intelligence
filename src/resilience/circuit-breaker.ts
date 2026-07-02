@@ -1,84 +1,64 @@
 /**
- * Threshold-based circuit breaker. Trips open after `failureThreshold`
- * consecutive failures, waits `resetTimeoutMs` before allowing a half-open
- * probe, and resets fully on a successful call.
+ * App wiring over the vendored @nanohype/runtime circuit breaker
+ * (`src/vendor/runtime/circuit-breaker.ts` — sliding-window failure
+ * accounting, injectable clock, single half-open probe).
  *
- * This is a simple counter-based implementation, not a sliding window —
- * all failures since the last reset count equally regardless of age.
+ * Semantics: the breaker trips when `failureThreshold` failures land
+ * within a rolling `windowMs` — failure density, not a consecutive
+ * count. Old failures decay out of the window instead of accumulating
+ * across crawl cycles. Config mapping from the pre-unification counter
+ * breaker: `failureThreshold` carries over unchanged, the old
+ * `resetTimeoutMs` cooldown is `halfOpenAfterMs`, and the window
+ * defaults to 5 minutes — wide enough that `failureThreshold`
+ * back-to-back worst-case calls (fetch 30s, LLM 60s, embed 30s,
+ * Slack 10s deadlines) always land inside one window, so a hard-down
+ * target trips exactly as fast as the counter did.
+ *
+ * This module owns the metrics wiring: `onOpen` raises the
+ * `circuit_breaker.open` gauge (backs the CircuitBreakerOpen alert +
+ * dashboard panel), and every successful call lowers it — mirroring the
+ * gauge lifecycle call sites relied on before.
  */
 
+import { createCircuitBreaker, type CircuitBreaker } from "../vendor/runtime/circuit-breaker.js";
 import { setCircuitBreakerOpen } from "../metrics.js";
 
-type State = "closed" | "open" | "half-open";
+export {
+  CircuitOpenError,
+  type CircuitBreaker,
+  type CircuitState,
+} from "../vendor/runtime/circuit-breaker.js";
 
-export interface CircuitBreakerOptions {
+export interface BreakerOptions {
+  /** Failures within the window that trip the breaker. @default 5 */
   failureThreshold?: number;
-  resetTimeoutMs?: number;
-  halfOpenMaxAttempts?: number;
+  /** Rolling window for failure accounting, in ms. @default 300_000 */
+  windowMs?: number;
+  /** Cooldown before a single half-open probe, in ms. @default 60_000 */
+  halfOpenAfterMs?: number;
 }
 
-export class CircuitBreaker {
-  private state: State = "closed";
-  private failures = 0;
-  private lastFailureTime = 0;
-  private halfOpenAttempts = 0;
+export function createBreaker(name: string, options: BreakerOptions = {}): CircuitBreaker {
+  const breaker = createCircuitBreaker({
+    name,
+    failureThreshold: options.failureThreshold ?? 5,
+    windowMs: options.windowMs ?? 300_000,
+    halfOpenAfterMs: options.halfOpenAfterMs ?? 60_000,
+    onOpen: (n) => setCircuitBreakerOpen(n, true),
+  });
 
-  private readonly failureThreshold: number;
-  private readonly resetTimeoutMs: number;
-  private readonly halfOpenMaxAttempts: number;
-
-  constructor(
-    private readonly name: string,
-    options: CircuitBreakerOptions = {},
-  ) {
-    this.failureThreshold = options.failureThreshold ?? 5;
-    this.resetTimeoutMs = options.resetTimeoutMs ?? 60_000;
-    this.halfOpenMaxAttempts = options.halfOpenMaxAttempts ?? 1;
-  }
-
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.state === "open") {
-      if (Date.now() - this.lastFailureTime >= this.resetTimeoutMs) {
-        this.state = "half-open";
-        this.halfOpenAttempts = 0;
-      } else {
-        throw new Error(`Circuit breaker "${this.name}" is open`);
-      }
-    }
-
-    if (this.state === "half-open" && this.halfOpenAttempts >= this.halfOpenMaxAttempts) {
-      this.trip();
-      throw new Error(`Circuit breaker "${this.name}" tripped during half-open probe`);
-    }
-
-    try {
-      if (this.state === "half-open") this.halfOpenAttempts++;
-      const result = await fn();
-      this.reset();
+  return {
+    async exec<T>(fn: () => Promise<T>): Promise<T> {
+      const result = await breaker.exec(fn);
+      // Any success means the breaker is closed (a half-open probe that
+      // succeeds closes it) — lower the gauge.
+      setCircuitBreakerOpen(name, false);
       return result;
-    } catch (error) {
-      this.recordFailure();
-      throw error;
-    }
-  }
-
-  private recordFailure(): void {
-    this.failures++;
-    this.lastFailureTime = Date.now();
-    if (this.failures >= this.failureThreshold) {
-      this.trip();
-    }
-  }
-
-  private trip(): void {
-    this.state = "open";
-    setCircuitBreakerOpen(this.name, true);
-  }
-
-  private reset(): void {
-    this.state = "closed";
-    this.failures = 0;
-    this.halfOpenAttempts = 0;
-    setCircuitBreakerOpen(this.name, false);
-  }
+    },
+    state: () => breaker.state(),
+    reset(): void {
+      breaker.reset();
+      setCircuitBreakerOpen(name, false);
+    },
+  };
 }

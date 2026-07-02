@@ -12,5 +12,7 @@ export default tseslint.config(
       ],
     },
   },
-  { ignores: ["dist/"] },
+  // src/vendor/ holds byte-identical copies of @nanohype/runtime modules,
+  // linted at their source of truth — local lint fixes there would be drift.
+  { ignores: ["dist/", "src/vendor/"] },
 );
