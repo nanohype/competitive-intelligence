@@ -12,13 +12,12 @@ export default defineConfig({
       // local tests cover this app's wiring of them.
       exclude: ['src/**/*.test.ts', 'src/vendor/**'],
       // Floors set just below current measured coverage so CI fails on a
-      // regression, not on the current state. Ratchet up as the orchestrators
-      // (crawler/slack/intel) gain tests.
+      // regression, not on the current state. Ratchet up as the suite grows.
       thresholds: {
-        lines: 30,
-        functions: 28,
-        branches: 38,
-        statements: 30,
+        lines: 50, // measured 52.59
+        functions: 45, // measured 47.27
+        branches: 59, // measured 61.94
+        statements: 50, // measured 52.65
       },
     },
   },
