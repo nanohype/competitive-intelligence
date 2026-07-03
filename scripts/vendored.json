@@ -1,0 +1,20 @@
+{
+  "entries": [
+    { "src": "library/scripts/sync-vendored.mjs", "dest": "scripts/sync-vendored.mjs" },
+    { "src": "library/config/prettierrc.json", "dest": ".prettierrc.json" },
+    { "src": "library/config/eslint.base.mjs", "dest": "eslint.base.mjs" },
+    {
+      "src": "library/runtime/src/circuit-breaker.ts",
+      "dest": "src/vendor/runtime/circuit-breaker.ts"
+    },
+    { "src": "library/runtime/src/logger.ts", "dest": "src/vendor/runtime/logger.ts" },
+    { "src": "library/runtime/src/metrics.ts", "dest": "src/vendor/runtime/metrics.ts" },
+    { "src": "library/runtime/src/registry.ts", "dest": "src/vendor/runtime/registry.ts" },
+    {
+      "src": "templates/tenant-chart-base/skeleton/chart",
+      "dest": "chart/charts/tenant-chart-base",
+      "dir": true
+    }
+  ],
+  "exclusiveDirs": ["src/vendor/runtime"]
+}

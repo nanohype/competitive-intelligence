@@ -7,6 +7,9 @@ docs
 chart/templates
 chart/dashboards
 
-# Byte-identical copies of @nanohype/runtime modules, formatted at their
-# source of truth — local formatting would be drift.
+# Byte-identical vendored copies (runtime modules, the sync script, the
+# ESLint base), formatted at their source of truth — local formatting
+# would be drift.
 src/vendor
+scripts/sync-vendored.mjs
+eslint.base.mjs

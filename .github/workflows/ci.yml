@@ -87,17 +87,18 @@ jobs:
       - run: docker build -t competitive-intelligence:ci .
 
   vendor-drift:
-    name: vendored runtime drift check
+    name: vendored copy drift check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # src/vendor/runtime/ carries byte-identical copies of
-      # nanohype/library/runtime modules (same consumption model as the
-      # vendored tenant-chart-base chart). A copy that drifts from the
-      # source of truth is the defect — fixes propagate outward from the
-      # library, never inward.
-      - name: Checkout nanohype (runtime library source of truth)
+      # Every vendored surface (src/vendor/runtime modules, .prettierrc.json,
+      # eslint.base.mjs, the tenant-chart-base chart, and the sync script
+      # itself) is a byte-identical copy of its source of truth in
+      # nanohype/nanohype, declared in scripts/vendored.json. A copy that
+      # drifts is the defect — fixes propagate outward from the library,
+      # never inward.
+      - name: Checkout nanohype (vendored source of truth)
         uses: actions/checkout@v4
         with:
           repository: nanohype/nanohype
@@ -107,7 +108,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Vendored runtime drift check
-        run: node scripts/sync-runtime.mjs --check
+      - name: Vendored copy drift check
+        run: node scripts/sync-vendored.mjs --check
         env:
           NANOHYPE_DIR: .nanohype
