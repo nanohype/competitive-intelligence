@@ -32,14 +32,17 @@ const schema = z
     crawlTimeoutMs: z.number().default(30_000),
     userAgent: z.string().default('competitive-intelligence/0.1.0'),
 
+    // Outbound alert sink — posts the radar's Block Kit alerts to Slack via
+    // @slack/web-api. Absent → alerts log only (CLI / local dev).
     slackBotToken: z.string().optional(),
-    slackSigningSecret: z.string().optional(),
-    slackAppToken: z.string().optional(),
     slackAlertChannel: z.string().default('#competitive-intel'),
 
     significanceThreshold: z.number().min(0).max(1).default(0.3),
 
     port: z.number().default(3000),
+    // MCP streamable-HTTP server port — the pull/query surface Claude reaches
+    // over the mcp-tunnel. Separate from `port` (the /health+/readyz server).
+    mcpPort: z.number().default(3001),
     nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
     logLevel: logLevelSchema,
   })
@@ -67,16 +70,6 @@ const schema = z
       });
     }
     // Bedrock uses AWS credential chain — no key validation needed
-
-    // Slack HTTP mode requires signing secret
-    if (data.slackBotToken && !data.slackAppToken && !data.slackSigningSecret) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'SLACK_SIGNING_SECRET is required in HTTP mode (no SLACK_APP_TOKEN). Set SLACK_APP_TOKEN for Socket Mode or provide SLACK_SIGNING_SECRET.',
-        path: ['slackSigningSecret'],
-      });
-    }
   });
 
 export type Config = z.infer<typeof schema>;
@@ -105,11 +98,10 @@ export function loadConfig(): Config {
     crawlTimeoutMs: num(process.env.CRAWL_TIMEOUT_MS),
     userAgent: process.env.USER_AGENT,
     slackBotToken: process.env.SLACK_BOT_TOKEN,
-    slackSigningSecret: process.env.SLACK_SIGNING_SECRET,
-    slackAppToken: process.env.SLACK_APP_TOKEN,
     slackAlertChannel: process.env.SLACK_ALERT_CHANNEL,
     significanceThreshold: num(process.env.SIGNIFICANCE_THRESHOLD),
     port: num(process.env.PORT),
+    mcpPort: num(process.env.MCP_PORT),
     nodeEnv: process.env.NODE_ENV,
     logLevel: process.env.LOG_LEVEL,
   });

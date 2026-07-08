@@ -3,6 +3,7 @@ dist
 coverage
 package-lock.json
 docs
+.plans
 
 chart/templates
 chart/dashboards

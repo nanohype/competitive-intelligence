@@ -6,10 +6,13 @@ image:
   tag: '' # pinned per-env
   pullPolicy: IfNotPresent
 
-# Single long-lived worker: scheduler + Slack Socket Mode + crawler. The
-# scheduler runs one global crawl on an interval and an in-process crawl mutex
-# prevents overlapping runs — both assume a single writer. Do NOT scale
-# horizontally without leader election; there is no HPA on this Deployment.
+# Single Deployment: the scheduler + crawler, the outbound alert sink, and the
+# MCP server all run in ONE process. The scheduler runs one global crawl on an
+# interval and an in-process crawl mutex prevents overlapping runs; the MCP
+# `trigger_crawl` tool calls that same in-process mutex directly. All three
+# assume a single writer. Do NOT scale horizontally without leader election;
+# there is no HPA on this Deployment. (A worker/mcp Deployment split is a future
+# refinement — it would require exposing the crawl trigger over internal HTTP.)
 replicaCount: 1
 
 service:
@@ -17,6 +20,10 @@ service:
   # Health port. The app serves /health + /readyz here (config.port, env PORT).
   port: 3000
   targetPort: 3000
+  # MCP streamable-HTTP port. The pull/query surface (config.mcpPort, env
+  # MCP_PORT) the mcp-tunnel routes to. Locked to the tunnel by NetworkPolicy.
+  mcpPort: 3001
+  mcpTargetPort: 3001
 
 serviceAccount:
   create: true
@@ -114,15 +121,29 @@ grafanaDashboard:
 
 networkPolicy:
   enabled: true
-  # Ingress: same-namespace only (kubelet/probe traffic from the node lands as
-  # same-namespace; no public ingress). The Slack transport is Socket Mode — an
-  # outbound WebSocket — so there is no inbound HTTP product surface.
+  # Ingress is default-deny except for the two rules below. There is no public
+  # ingress and no LoadBalancer — the MCP surface is reachable ONLY through the
+  # mcp-tunnel (outbound-only cloudflared), never directly.
   ingress:
+    # Health/probe traffic: same-namespace only. Kubelet probes from the node
+    # land as same-namespace; the health port serves /health + /readyz and
+    # carries no product data.
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
           port: 3000
+    # MCP pull surface: reachable ONLY from the mcp-tunnel namespace. The
+    # mcp-tunnel is the single ingress to the MCP server — every other source
+    # stays default-deny. This is what makes the app tunnel-ready without
+    # opening any public surface.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mcp-tunnel
+      ports:
+        - protocol: TCP
+          port: 3001
   egress:
     # DNS
     - to:
@@ -191,6 +212,9 @@ env:
   SLACK_ALERT_CHANNEL: '#competitive-intel'
   USER_AGENT: competitive-intelligence/0.1.0
   PORT: '3000'
+  # MCP streamable-HTTP server port — the pull/query surface. Matches
+  # service.mcpTargetPort and the deployment's mcp containerPort.
+  MCP_PORT: '3001'
   NODE_ENV: production
   # OTel — exports to the grafana-agent OTLP receiver in the monitoring namespace,
   # which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecar.

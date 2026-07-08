@@ -2,7 +2,7 @@
 
 Helm chart for the competitive-intelligence radar. Renders into a Platform tenant on the `eks-agent-platform` operator running on a nanohype-org EKS cluster.
 
-The workload is a single long-lived worker: a scheduler that runs one global crawl on an interval, the crawler that fetches competitor sites, the semantic-diff pipeline, and a Slack bot in Socket Mode (outbound WebSocket). There is no inbound HTTP product surface — the only port served is the health port for probes.
+The workload is a single long-lived process: a scheduler that runs one global crawl on an interval, the crawler that fetches competitor sites, the semantic-diff pipeline, an outbound Slack alert sink, and the MCP server (the pull/query surface). It serves two ports — the health port for probes and the MCP port. There is no public ingress: the MCP port is reachable only through the mcp-tunnel (outbound-only `cloudflared`), which the NetworkPolicy admits from the `mcp-tunnel` namespace alone.
 
 ## Files
 
@@ -12,11 +12,11 @@ The workload is a single long-lived worker: a scheduler that runs one global cra
 - `charts/tenant-chart-base/` — vendored library subchart (see Dependencies)
 - `dashboards/competitive-intelligence.json` — the Grafana dashboard JSON loaded by `grafana-dashboard.yaml`
 - `templates/`
-  - `deployment.yaml` — the worker pod. Non-root, `readOnlyRootFilesystem` with a `/tmp` emptyDir, env from `values.env` + `tenantInfra.pg*`, secrets via `envFrom: secretRef`, liveness `/health` + readiness `/readyz` on the health port, `checksum/external-secret` pod-roll annotation. `replicaCount: 1` with a `Recreate` strategy — single-writer scheduler + crawl mutex; never run two at once.
-  - `service.yaml` — ClusterIP on the health port (default 3000)
+  - `deployment.yaml` — the pod. Non-root, `readOnlyRootFilesystem` with a `/tmp` emptyDir, env from `values.env` + `tenantInfra.pg*`, secrets via `envFrom: secretRef`, two containerPorts (`http` for `/health`+`/readyz`, `mcp` for the MCP server), liveness `/health` + readiness `/readyz` on the health port, `checksum/external-secret` pod-roll annotation. `replicaCount: 1` with a `Recreate` strategy — single-writer scheduler + crawl mutex, and the MCP `trigger_crawl` calls that same in-process mutex; never run two at once.
+  - `service.yaml` — ClusterIP with two named ports: `http` (health, default 3000) and `mcp` (default 3001, the port the tunnel routes to)
   - `serviceaccount.yaml` — thin `tenant-chart-base.serviceaccount` include; name pinned to `competitive-intelligence`, bound to its IAM role by the landing-zone `competitive-intelligence-platform` Pod Identity association. No role-arn annotation, no inline IAM.
-  - `externalsecret.yaml` — pulls Slack tokens + optional provider keys from `competitive-intelligence/<env>/app-secrets` and `PGUSER`/`PGPASSWORD` from `competitive-intelligence/<env>/db-credentials`
-  - `networkpolicy.yaml` — thin `tenant-chart-base.networkpolicy` include; default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR); ingress is same-namespace probes only
+  - `externalsecret.yaml` — pulls the Slack bot token + optional provider keys from `competitive-intelligence/<env>/app-secrets` and `PGUSER`/`PGPASSWORD` from `competitive-intelligence/<env>/db-credentials`
+  - `networkpolicy.yaml` — thin `tenant-chart-base.networkpolicy` include; default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR). Ingress: same-namespace health probes, plus the MCP port from the `mcp-tunnel` namespace only (`namespaceSelector` on `kubernetes.io/metadata.name: mcp-tunnel`) — the tunnel is the single ingress to the MCP surface
   - `prometheusrule.yaml` — alerts (crawl-failure spike, circuit-breaker open, alert-send failure, pgvector unreachable); uses the base chart's fullname/labels helpers
   - `grafana-dashboard.yaml` — thin `tenant-chart-base` include rendering a `GrafanaDashboard` CR (instanceSelector `dashboards: external`) from `dashboards/competitive-intelligence.json`, reconciled by the grafana-operator onto Amazon Managed Grafana
 
@@ -43,7 +43,7 @@ Single-tenant component `components/aws/competitive-intelligence-platform/` prov
 
 - Aurora Serverless v2 (PostgreSQL + pgvector at app bootstrap) — the durable vector store that survives restarts, so the first post-restart crawl diffs against real history instead of re-flooding alerts
 - IAM role with the inline policy: Bedrock `InvokeModel` for Claude Sonnet + Titan Embed v2, Secrets Manager read scoped to `competitive-intelligence/<env>/*`, CloudWatch `PutMetricData`
-- Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (Slack + optional provider keys) and the Aurora-managed `competitive-intelligence/<env>/db-credentials`
+- Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (the Slack bot token for the alert sink + optional provider keys) and the Aurora-managed `competitive-intelligence/<env>/db-credentials`
 
 ## Pod identity
 

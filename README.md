@@ -5,15 +5,17 @@
 ![Node](https://img.shields.io/badge/Node-%3E%3D24-339933?logo=node.js)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Tenant-326CE5?logo=kubernetes)
 
-A competitive-intelligence radar. It crawls competitor websites on an interval, embeds the content, and **semantic-diffs** each page against its own history using embedding cosine similarity — not text comparison — so only meaningfully new content counts as a change. When a page's change score clears the significance threshold, an LLM analyzes the new content (summary + significance + extracted signals) and fires a Slack alert. Accumulated intelligence is queryable over Slack and the CLI.
+A competitive-intelligence radar. It crawls competitor websites on an interval, embeds the content, and **semantic-diffs** each page against its own history using embedding cosine similarity — not text comparison — so only meaningfully new content counts as a change. When a page's change score clears the significance threshold, an LLM analyzes the new content (summary + significance + extracted signals) and fires a Slack alert. The accumulated intelligence is queryable through an MCP server (the tools any Claude surface calls) and the CLI.
 
 **AI clients / agents start here:** [`AGENTS.md`](AGENTS.md). For the stack-wide view, see the [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md).
 
-> The Slack slash command is `/competitive-intelligence`; the default alert channel is `#competitive-intel` (a short handle the team watches).
+> The default alert channel is `#competitive-intel` (a short handle the team watches).
 
 ## What it is
 
-A radar that watches competitor marketing, docs, and pricing pages and tells you when something actually changed. The trick is the diff: each page is chunked and embedded, and a chunk only counts as "new" when its cosine similarity to the best stored match for that source falls below 0.85. A reworded paragraph or a reordered nav doesn't fire; a new enterprise tier or a deprecated API does. Above-threshold changes get an LLM analysis and a Slack alert; the accumulated history answers ad-hoc questions (`/competitive-intelligence query …`).
+A radar that watches competitor marketing, docs, and pricing pages and tells you when something actually changed. The trick is the diff: each page is chunked and embedded, and a chunk only counts as "new" when its cosine similarity to the best stored match for that source falls below 0.85. A reworded paragraph or a reordered nav doesn't fire; a new enterprise tier or a deprecated API does. Above-threshold changes get an LLM analysis and a Slack alert; the accumulated history answers ad-hoc questions through the MCP `search_intel` tool (or `npm run query`).
+
+Two halves: an autonomous **push radar** (scheduler → crawl → semantic-diff → alert) and an interactive **pull surface** — an MCP server whose tools Claude surfaces call. The radar posts through an outbound Slack sink; the query surface is the MCP server.
 
 History is durable — embeddings live in pgvector (Aurora), so a pod restart or rollout diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any unseeded source is treated as baseline seeding (ingest + embed, no alerts). Bedrock (Claude Sonnet via Converse for analysis, Titan v2 for embeddings) is the default and runs on-account via EKS Pod Identity — no keys; Anthropic and OpenAI are pluggable alternates. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the bounded contexts, the crawl→alert data flow, and the load-bearing decisions.
 
@@ -25,10 +27,10 @@ History is durable — embeddings live in pgvector (Aurora), so a pod restart or
 npm install
 cp .env.example .env             # fill in values — see CLAUDE.md > Configuration
 cp sources.example.json sources.json
-npm run dev                      # tsx watch src/index.ts — scheduler + Slack bot + /health on :3000
+npm run dev                      # tsx watch src/index.ts — scheduler + alert sink + MCP server + /health
 ```
 
-Local dev defaults to `VECTOR_PROVIDER=memory` (no database). To exercise durable history, point `VECTOR_PROVIDER=pgvector` + `DATABASE_URL` at a Postgres with the `vector` extension. Without Slack:
+`npm run dev` serves `/health` + `/readyz` on `:3000` (PORT) and the MCP server on `:3001` (MCP_PORT). Local dev defaults to `VECTOR_PROVIDER=memory` (no database). To exercise durable history, point `VECTOR_PROVIDER=pgvector` + `DATABASE_URL` at a Postgres with the `vector` extension. From the CLI:
 
 ```bash
 npm run crawl                    # one-off crawl + diff + alert
@@ -60,22 +62,28 @@ Monitored pages live in `sources.json` (validated with Zod on load; `sources.exa
 
 `type` is one of `changelog` / `blog` / `pricing` / `careers` / `docs` / `general`. `selectors.content` scopes the main content region (defaults to `body`); `selectors.exclude` strips nav/footer/ads. The per-source history key is `id`, which defaults to `<competitor>:<type>` — set it explicitly to monitor two same-type pages for one competitor. The fetcher is static HTML; JS-rendered SPAs return little content. Selectors track each site's markup, so a competitor redesign may need an update.
 
-## Slack
+## Query surface (MCP)
 
-Slack is optional — the CLI works without it. To enable: create a Slack app, add bot scopes (`app_mentions:read`, `chat:write`, `commands`, `im:history`, `im:read`, `im:write`), subscribe to `app_mention` + `message.im` events, register the `/competitive-intelligence` slash command, and (for Socket Mode) generate an app-level token with `connections:write`. Then set `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, and `SLACK_APP_TOKEN`. If `SLACK_APP_TOKEN` is set the bot runs in Socket Mode (no public URL); otherwise it listens for HTTP events on `PORT`.
+The pull surface is an MCP server (streamable HTTP, `@modelcontextprotocol/sdk`) on `MCP_PORT`. Any Claude surface — claude.ai, Desktop, Claude Code, mobile — consumes it as a custom connector; the model does the reasoning over what the tools return. On the cluster the mcp-tunnel (outbound-only) is its only ingress; locally it's reachable at `http://localhost:3001/mcp`.
 
-| Command                                      | Description                     |
-| -------------------------------------------- | ------------------------------- |
-| `/competitive-intelligence query <question>` | Ask about competitors           |
-| `/competitive-intelligence crawl`            | Trigger an immediate crawl      |
-| `/competitive-intelligence status`           | Show system uptime and health   |
-| `@<bot> <question>`                          | Ask via @mention in any channel |
+| Tool                                         | Returns                                                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `search_intel(question, competitor?, topK?)` | The ranked chunks + source metadata for the question (retrieved context, not a composed answer) |
+| `trigger_crawl()`                            | Runs a crawl through the single-writer mutex; `ran` or `skipped`                                |
+| `status()`                                   | Uptime, heap usage, Node version                                                                |
+| `list_sources()`                             | The configured crawl sources (id / competitor / url / type)                                     |
+
+`search_intel` returns retrieved evidence; the consuming model composes the answer. The CLI (`npm run query`) is the on-account composed-answer path over the same retrieval.
+
+## Alerts (Slack)
+
+Alerts are outbound only. The radar posts its deterministic Block Kit alerts to `#competitive-intel` via `@slack/web-api` `chat.postMessage`. Set `SLACK_BOT_TOKEN` (a bot token with `chat:write`) and optionally `SLACK_ALERT_CHANNEL`. Absent a token, alerts log to stderr — the CLI and MCP surface work without Slack.
 
 ## Deploy
 
 Ships as a [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) Platform tenant. The trio:
 
-- **`chart/`** — the application Helm chart: Deployment (`replicaCount: 1`, single-writer crawl mutex) + Service (`/health`+`/readyz`) + NetworkPolicy (default-deny + egress allow-list, IMDS blocked, no public ingress) + ServiceAccount (Pod Identity) + ExternalSecret (ESO), plus PrometheusRule alerts and a Grafana dashboard. Per-env deltas in `chart/values-{dev,staging,production}.yaml`.
+- **`chart/`** — the application Helm chart: Deployment (`replicaCount: 1`, single-writer crawl mutex) + Service (the `/health`+`/readyz` port and the MCP port) + NetworkPolicy (default-deny + egress allow-list, IMDS blocked; ingress only same-namespace probes and the MCP port from the `mcp-tunnel` namespace) + ServiceAccount (Pod Identity) + ExternalSecret (ESO), plus PrometheusRule alerts and a Grafana dashboard. Per-env deltas in `chart/values-{dev,staging,production}.yaml`.
 - **`platform.yaml`** — the `Platform` CR + `BudgetPolicy` declaring the tenant boundary (`tenant: protohype`, namespace `tenants-protohype`, project `tenant-protohype`). The operator reconciles the Namespace, ResourceQuota, NetworkPolicy, and ArgoCD AppProject.
 - **`gitops/applicationset-entry.yaml`** — the ApplicationSet entry registered into [`nanohype/eks-gitops`](https://github.com/nanohype/eks-gitops) for ArgoCD reconciliation.
 
@@ -83,10 +91,10 @@ The AWS substrate — Aurora Serverless v2 (pgvector), the IAM role, and Secrets
 
 ## Boundaries
 
-This repo owns the application — the crawler, the semantic-diff pipeline, the alert + intel engines, the Slack surface, and the tenant trio that deploys it. It does **not** own:
+This repo owns the application — the crawler, the semantic-diff pipeline, the alert + intel engines, the MCP query surface, the outbound alert sink, and the tenant trio that deploys it. It does **not** own:
 
 - AWS substrate (Aurora/pgvector, the IAM role, Secrets Manager seeding) → the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone)
-- Cluster addons (external-secrets, the OTel collector + log forwarder, kube-prometheus-stack) → [`eks-gitops`](https://github.com/nanohype/eks-gitops)
+- Cluster addons (external-secrets, the OTel collector + log forwarder, kube-prometheus-stack, the mcp-tunnel that fronts the MCP surface) → [`eks-gitops`](https://github.com/nanohype/eks-gitops)
 
 ## Configuration
 

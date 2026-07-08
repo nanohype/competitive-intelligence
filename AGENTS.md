@@ -1,12 +1,25 @@
 # competitive-intelligence — agent entry point
 
-You're an AI client (or the author of one) about to run this service locally, add a crawl source, wire a new LLM or embedding provider, swap the vector backend, or ship it as a Platform tenant. This file gets you running in five minutes. For the wider picture — how this repo fits into the nanohype stack — read the [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md).
+You're an AI client (or the author of one) about to run this service locally, call its MCP tools, add a crawl source, wire a new LLM or embedding provider, swap the vector backend, or ship it as a Platform tenant. This file gets you running in five minutes. For the wider picture — how this repo fits into the nanohype stack — read the [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md).
 
-> The repo, product name, npm package, OTel `service.name` / `agents.platform`, image repo, `competitive-intelligence/<env>/*` secret prefixes, and the Slack slash command (`/competitive-intelligence`) are all the literal name. The default alert channel is `#competitive-intel` — a short handle users watch.
+> The repo, product name, npm package, OTel `service.name` / `agents.platform`, image repo, and `competitive-intelligence/<env>/*` secret prefixes are all the literal name. The default alert channel is `#competitive-intel` — a short handle users watch.
 
 ## What this repo gives you
 
-A competitive-intelligence radar. It crawls competitor marketing/docs/pricing pages on an interval, embeds the content, and **semantic-diffs** each page against the last crawl using embedding cosine similarity — not text comparison. Only semantically novel content counts as a change. When a page's change score clears the significance threshold, an LLM analyzes the new content (summary + significance + extracted signals) and fires a Slack alert to `#competitive-intel`. You can also query the accumulated intelligence over Slack (`/competitive-intelligence query …`) or the CLI.
+A competitive-intelligence radar with two halves. The **push radar** crawls competitor marketing/docs/pricing pages on an interval, embeds the content, and **semantic-diffs** each page against the last crawl using embedding cosine similarity — not text comparison. Only semantically novel content counts as a change. When a page's change score clears the significance threshold, an LLM analyzes the new content (summary + significance + extracted signals) and fires a Slack alert to `#competitive-intel` through an outbound sink. The **pull surface** is an MCP server: its tools (`search_intel`, `trigger_crawl`, `status`, `list_sources`) let any Claude surface query the accumulated intelligence and drive the radar. `search_intel` returns the retrieved context (ranked chunks + source metadata) — the consuming model reasons over it. The same intelligence is queryable from the CLI.
+
+## MCP tools
+
+The MCP server (streamable HTTP, `@modelcontextprotocol/sdk`, `src/mcp/`) runs on `MCP_PORT` (default 3001, path `/mcp`). Register it as a custom connector in a Claude surface; on the cluster it's fronted by the mcp-tunnel.
+
+| Tool            | Input                                                                 | Returns                                                                    |
+| --------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `search_intel`  | `question`, optional `competitor`, optional `topK` (1–50, default 10) | Ranked chunks + source metadata (retrieved context, not a composed answer) |
+| `trigger_crawl` | —                                                                     | `ran` / `skipped` (through the single-writer crawl mutex)                  |
+| `status`        | —                                                                     | Uptime, heap usage, Node version                                           |
+| `list_sources`  | —                                                                     | Configured sources (id / competitor / url / type)                          |
+
+Every tool input is Zod-validated at the boundary (`src/mcp/tools.ts`); a bad argument returns an `isError` tool result, an unknown tool a protocol error. To add a tool: add its descriptor to `listTools`, a Zod schema, and a `dispatchTool` case, then a test through the pure `callTool` dispatcher — don't mock the SDK.
 
 The load-bearing property is that **history is durable**. Embeddings live in pgvector (Aurora), so a pod restart, rollout, or node drain diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any source whose stored vector count is zero is treated as baseline seeding (ingest + embed, no alerts), so a genuine first deploy or an empty backend doesn't flood the channel.
 
@@ -18,10 +31,10 @@ It's built around a provider-registry seam. LLM, embeddings, and vector store ar
 npm install
 cp .env.example .env       # fill in the keys you need (see CLAUDE.md > Configuration)
 cp sources.example.json sources.json
-npm run dev                # tsx watch src/index.ts — scheduler + Slack bot + /health on :3000
+npm run dev                # tsx watch src/index.ts — scheduler + alert sink + MCP server + /health
 ```
 
-Local dev defaults to `VECTOR_PROVIDER=memory` (no database needed). Point `VECTOR_PROVIDER=pgvector` + `DATABASE_URL` at a Postgres with the `vector` extension to exercise durable history. In Slack: `/competitive-intelligence query what changed at <competitor> this week?`
+`npm run dev` serves `/health` + `/readyz` on `:3000` (PORT) and the MCP server on `:3001` (MCP_PORT, path `/mcp`). Local dev defaults to `VECTOR_PROVIDER=memory` (no database needed). Point `VECTOR_PROVIDER=pgvector` + `DATABASE_URL` at a Postgres with the `vector` extension to exercise durable history. Point a Claude surface at `http://localhost:3001/mcp` and call `search_intel("what changed at <competitor> this week?")`.
 
 ```bash
 task ci                    # build + lint + typecheck + format:check + test + helm + docker (CI parity)
@@ -77,17 +90,17 @@ The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitR
 
 The application Deployment plus everything that supports it. Templates under `chart/templates/`:
 
-| Template                 | Owns                                                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deployment.yaml`        | The main pod — scheduler + Slack bot + HTTP health server on the health port. `replicaCount: 1` (single-writer crawl mutex)                                               |
-| `service.yaml`           | ClusterIP on the health port (`/health` + `/readyz`)                                                                                                                      |
-| `serviceaccount.yaml`    | name pinned to the app; bound to the landing-zone IAM role by an EKS Pod Identity association. No role-arn annotation, no inline IAM                                      |
-| `externalsecret.yaml`    | ESO syncs `competitive-intelligence/<env>/app-secrets` (Slack + optional provider keys) + `competitive-intelligence/<env>/db-credentials` (PG creds) from Secrets Manager |
-| `networkpolicy.yaml`     | Default-deny + egress allow-list (DNS, HTTPS to crawl targets + Bedrock + Slack with IMDS blocked, Postgres on the VPC CIDR). No public ingress                           |
-| `prometheusrule.yaml`    | Alerts — crawl failures, circuit-breaker open, alert-send failures, pgvector unreachable                                                                                  |
-| `grafana-dashboard.yaml` | ConfigMap loading `chart/dashboards/competitive-intelligence.json`                                                                                                        |
+| Template                 | Owns                                                                                                                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deployment.yaml`        | The main pod — scheduler + crawler + outbound alert sink + MCP server + HTTP health server, one process. `replicaCount: 1` (single-writer crawl mutex)                                                                              |
+| `service.yaml`           | ClusterIP with two ports — the health port (`/health` + `/readyz`) and the MCP port the mcp-tunnel routes to                                                                                                                        |
+| `serviceaccount.yaml`    | name pinned to the app; bound to the landing-zone IAM role by an EKS Pod Identity association. No role-arn annotation, no inline IAM                                                                                                |
+| `externalsecret.yaml`    | ESO syncs `competitive-intelligence/<env>/app-secrets` (Slack bot token + optional provider keys) + `competitive-intelligence/<env>/db-credentials` (PG creds) from Secrets Manager                                                 |
+| `networkpolicy.yaml`     | Default-deny + egress allow-list (DNS, HTTPS to crawl targets + Bedrock + Slack with IMDS blocked, Postgres on the VPC CIDR). Ingress: same-namespace probes + the MCP port from the `mcp-tunnel` namespace only. No public ingress |
+| `prometheusrule.yaml`    | Alerts — crawl failures, circuit-breaker open, alert-send failures, pgvector unreachable                                                                                                                                            |
+| `grafana-dashboard.yaml` | ConfigMap loading `chart/dashboards/competitive-intelligence.json`                                                                                                                                                                  |
 
-`values.yaml` is the base; `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no ingress** — the Slack surface is Socket Mode (outbound), and the only inbound is same-namespace probes.
+`values.yaml` is the base; `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no public ingress**: the MCP surface is reached only through the mcp-tunnel (outbound-only `cloudflared`), which the NetworkPolicy admits from the `mcp-tunnel` namespace alone; the only other inbound is same-namespace health probes. Wiring the tunnel addon + the per-tenant route is `eks-gitops` + operator work — this repo just ships a tunnel-ready Service locked by NetworkPolicy.
 
 ### Required tenant files
 
@@ -130,7 +143,7 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 - **Prompt caching.** The analysis system prompt is identical on every diff, so the Converse request marks a `cachePoint` after the system block. Cache hits are emitted as a metric — see `ARCHITECTURE.md` § Prompt caching.
 - **Circuit breakers on every external call** — per-host for the crawler's HTTP fetcher, per-provider for LLM + embeddings, and around the Slack alert sink. Sliding-window semantics (trips on failure density within a rolling window, single half-open probe after the cooldown), vendored from `@nanohype/runtime` and wired through `src/resilience/`.
 - **Vendored runtime modules stay byte-identical.** `src/vendor/runtime/` is a copy of `nanohype/library/runtime` modules — never edit locally. Fix upstream (with tests), then `npm run sync:vendored`; CI's drift check fails on any divergence, exactly like the vendored `tenant-chart-base` chart.
-- **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler runs one global crawl over all sources on an interval; an in-process mutex prevents the scheduler and a `/competitive-intelligence crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
+- **Single-writer scheduler + crawl mutex.** `replicaCount: 1`. The scheduler, alert sink, and MCP server share one process; the scheduler runs one global crawl over all sources on an interval, and an in-process mutex prevents the scheduler and an MCP `trigger_crawl` from overlapping. Scaling horizontally without leader election would double-crawl and race the differ — don't.
 - **SSRF-guarded crawling.** Every outbound crawl URL passes `guardUrl` (`src/crawler/url-guard.ts`) — rejects loopback, RFC1918, link-local, and cloud-metadata addresses before the fetch.
 - TypeScript strict, ESM NodeNext, Node ≥ 24. Zod at every boundary (config, sources, log level, LLM analysis output). Structured JSON logging to stderr via a hand-rolled logger (`src/logger.ts`); stdout is reserved for CLI output. Explicit timeouts on every external call (Bedrock/Anthropic/OpenAI, pgvector, Slack).
 
