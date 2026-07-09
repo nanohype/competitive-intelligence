@@ -165,9 +165,18 @@ async function main(): Promise<void> {
   // ─── Start ───
   scheduler.start();
 
-  // Run initial crawl
+  // Run initial crawl — best-effort seeding. A failure here (the embedding
+  // backend unreachable at boot, say) must not crash a long-running service
+  // that can still serve MCP queries and will re-attempt on the next scheduled
+  // interval; the scheduler guards its own runs the same way.
   logger.info('running initial crawl');
-  await runCrawl();
+  try {
+    await runCrawl();
+  } catch (err) {
+    logger.error('initial crawl failed; continuing and will retry on the schedule', {
+      error: toMessage(err),
+    });
+  }
 
   logger.info('competitive-intelligence running', {
     sources: sources.length,
