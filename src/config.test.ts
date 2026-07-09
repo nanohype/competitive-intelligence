@@ -22,11 +22,10 @@ const CONFIG_ENV_KEYS = [
   'CRAWL_TIMEOUT_MS',
   'USER_AGENT',
   'SLACK_BOT_TOKEN',
-  'SLACK_SIGNING_SECRET',
-  'SLACK_APP_TOKEN',
   'SLACK_ALERT_CHANNEL',
   'SIGNIFICANCE_THRESHOLD',
   'PORT',
+  'MCP_PORT',
   'NODE_ENV',
   'LOG_LEVEL',
 ] as const;
@@ -55,16 +54,19 @@ describe('loadConfig', () => {
     expect(c.significanceThreshold).toBe(0.3);
     expect(c.slackAlertChannel).toBe('#competitive-intel');
     expect(c.port).toBe(3000);
+    expect(c.mcpPort).toBe(3001);
     expect(c.nodeEnv).toBe('development');
   });
 
   it('coerces numeric env vars', () => {
     process.env.CRAWL_INTERVAL_MINUTES = '15';
     process.env.PORT = '8080';
+    process.env.MCP_PORT = '9090';
     process.env.EMBEDDING_DIMENSIONS = '1536';
     const c = loadConfig();
     expect(c.crawlIntervalMinutes).toBe(15);
     expect(c.port).toBe(8080);
+    expect(c.mcpPort).toBe(9090);
     expect(c.embeddingDimensions).toBe(1536);
   });
 
@@ -95,22 +97,10 @@ describe('loadConfig', () => {
     expect(() => loadConfig()).not.toThrow();
   });
 
-  // ── superRefine: Slack HTTP mode needs a signing secret ──────────────────
+  // ── outbound alert sink ──────────────────────────────────────────────────
 
-  it('requires a signing secret in Slack HTTP mode (bot token, no app token)', () => {
+  it('accepts a bot token for the outbound alert sink with no other Slack config', () => {
     process.env.SLACK_BOT_TOKEN = 'xoxb-test';
-    expect(() => loadConfig()).toThrow(/SLACK_SIGNING_SECRET is required in HTTP mode/);
-  });
-
-  it('accepts Slack Socket Mode (bot token + app token, no signing secret)', () => {
-    process.env.SLACK_BOT_TOKEN = 'xoxb-test';
-    process.env.SLACK_APP_TOKEN = 'xapp-test';
-    expect(loadConfig().slackAppToken).toBe('xapp-test');
-  });
-
-  it('accepts Slack HTTP mode when the signing secret is present', () => {
-    process.env.SLACK_BOT_TOKEN = 'xoxb-test';
-    process.env.SLACK_SIGNING_SECRET = 'shhh';
-    expect(loadConfig().slackSigningSecret).toBe('shhh');
+    expect(loadConfig().slackBotToken).toBe('xoxb-test');
   });
 });

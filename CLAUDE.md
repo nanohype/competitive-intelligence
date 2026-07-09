@@ -2,20 +2,21 @@
 
 Competitive-intelligence radar — crawls competitor sites, semantic-diffs each page against its own history, and alerts Slack when something meaningfully changes.
 
-> The repo, npm package, OTel `service.name` / `agents.platform`, image repo, `competitive-intelligence/<env>/*` secret prefixes, and the Slack slash command (`/competitive-intelligence`) are all the literal name. The default alert channel is `#competitive-intel` — a short handle the team watches.
+> The repo, npm package, OTel `service.name` / `agents.platform`, image repo, and `competitive-intelligence/<env>/*` secret prefixes are all the literal name. The default alert channel is `#competitive-intel` — a short handle the team watches.
 
 ## What This Is
 
-A standalone Platform tenant of the `protohype` team on the `eks-agent-platform` operator. It monitors a configured set of competitor pages: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert. The accumulated intelligence is queryable over Slack (`/competitive-intelligence query`) and the CLI.
+A standalone Platform tenant of the `protohype` team on the `eks-agent-platform` operator. It has two halves. An autonomous **push radar**: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert, on a schedule. And an interactive **pull surface**: an MCP server whose tools any Claude surface (Claude Tag et al.) calls to search the accumulated intelligence, trigger a crawl, and inspect status/sources. The same intelligence is also queryable from the CLI.
 
 Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config, so swapping a backend is a one-file change to the bootstrap. Bedrock is the default for LLM (Converse) and embeddings (Titan v2), running on the AWS credential chain → EKS Pod Identity on the cluster, no keys. Anthropic and OpenAI are pluggable alternates.
 
 ## How It Works
 
 ```
-sources.json → Crawler → Pipeline (chunk → embed → semantic diff) → Alert Engine → Slack (#competitive-intel)
+sources.json → Crawler → Pipeline (chunk → embed → semantic diff) → Alert Engine → Slack sink (#competitive-intel)
                                                                           ↕
-                                                               Intel Engine (query via /competitive-intelligence or CLI)
+                                                               Intel Engine ──→ MCP server (search_intel, …) ← Claude surfaces
+                                                                            └─→ CLI query
 ```
 
 Core insight: semantic diffing via embedding cosine similarity, not text comparison. A chunk is "new" only when its cosine similarity to the best stored match for the same source is below 0.85; a page's change score is `newChunks / totalChunks`. Only semantically novel content above `SIGNIFICANCE_THRESHOLD` triggers an alert.
@@ -29,11 +30,11 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 - **src/vendor/runtime/** — Vendored `@nanohype/runtime` modules: `circuit-breaker.ts` (sliding-window breaker, injectable clock, onOpen/onClose transition hooks), `registry.ts` (`createRegistry<T>`), `metrics.ts` (the lazy namespace-qualified OTel instrument core behind `src/metrics.ts`), and `logger.ts` (the JSON-lines + OTel-trace-correlation core behind `src/logger.ts`). Byte-identical copies of `nanohype/library/runtime` — the same consumption model as the vendored `tenant-chart-base` chart. `scripts/sync-vendored.mjs` (re)writes the copies from a nanohype checkout (`NANOHYPE_DIR`, default `../nanohype`); CI runs it with `--check` and fails on drift. Never edit these locally — fix upstream, re-sync.
 - **src/resilience/** — App wiring over the vendored breaker: `createBreaker(name, opts)` maps `failureThreshold`/`windowMs`/`halfOpenAfterMs` (defaults 5 / 5 min / 60 s) and raises/lowers the `circuit_breaker.open` gauge on trip/success/reset. The breaker trips on failure density within the rolling window, not on a consecutive count.
 - **src/pipeline/** — Recursive text chunker with overlap → embed → semantic diff against stored vectors → `deleteByMetadata` old chunks → upsert new. Holds the cold-start baseline guard.
-- **src/intel/** — Query facade: embed question → vector search → LLM-generated answer with context. `analysis.ts` holds the LLM change analysis (significance + signal extraction) and the cached analysis/query system prompts.
-- **src/alerts/** — Threshold gating on change score → LLM analysis → Slack Block Kit formatting → dispatch through the alert sink.
-- **src/slack/** — `@slack/bolt` app. @mention + DM query handlers (`handlers.ts`), `/competitive-intelligence query|crawl|status` slash command (`commands.ts`). Socket Mode when `SLACK_APP_TOKEN` is set, HTTP mode otherwise.
-- **src/scheduler/** — `setInterval`-based job runner. One global crawl over all sources at a configurable interval. The crawl mutex (in `index.ts`) prevents the scheduler and a slash-command crawl from overlapping.
-- **src/index.ts** — Bootstrap. Wires config → providers → sources → crawl loop → intel/alert engines → Slack bot → scheduler. Runs a `node:http` server for `/health` (liveness) + `/readyz` (readiness — vector store reachable, Slack connected in Socket Mode) on `PORT`, independent of Slack transport. Runs an initial crawl on boot, then on interval. Graceful shutdown on SIGINT/SIGTERM.
+- **src/intel/** — Query facade with two entry points over one retrieval path. `retrieve` embeds the question → vector search → returns the ranked chunks with their source metadata (the context the MCP `search_intel` tool hands back). `query` composes an LLM answer over that same context (the CLI answer path and the in-boundary composed-answer option). `analysis.ts` holds the LLM change analysis (significance + signal extraction) and the cached analysis/query system prompts.
+- **src/alerts/** — Threshold gating on change score → LLM analysis → Slack Block Kit formatting → dispatch through the alert sink. `slack-sink.ts` is the outbound sink: `@slack/web-api` `chat.postMessage`, circuit-breakered with a 10s timeout. Deterministic Block Kit alerts are the radar's product — they are not re-generated by a model.
+- **src/mcp/** — The pull/query surface. A streamable-HTTP MCP server (`server.ts`, the official `@modelcontextprotocol/sdk`) on `MCP_PORT`, and the tool set (`tools.ts`): `search_intel(question, competitor?, topK?)` returns retrieved context (ranked chunks + source metadata — the consuming model does the reasoning), `trigger_crawl()` calls the in-process single-writer crawl, `status()` reports uptime/mem/version, `list_sources()` returns the Zod-validated source set. Every tool input is Zod-validated at the boundary; a bad argument comes back as an `isError` tool result, an unknown tool as a protocol error. The mcp-tunnel is the only ingress (chart NetworkPolicy).
+- **src/scheduler/** — `setInterval`-based job runner. One global crawl over all sources at a configurable interval. The crawl mutex (in `index.ts`) prevents the scheduler and an MCP `trigger_crawl` from overlapping.
+- **src/index.ts** — Bootstrap. Wires config → providers → sources → crawl loop → intel/alert engines → outbound alert sink → MCP server → scheduler, all in one process (single writer). Runs a `node:http` server for `/health` (liveness) + `/readyz` (readiness — vector store reachable) on `PORT`, and the MCP streamable-HTTP server on `MCP_PORT`. Runs an initial crawl on boot, then on interval. Graceful shutdown on SIGINT/SIGTERM (stops the scheduler, closes the MCP server + health server).
 - **src/cli.ts** — One-off `crawl` and `query` commands for use without Slack. Reuses `crawlAll` (per-source progress via its `onResult` callback) and renders output through **src/display.ts** (ANSI CLI presentation layer).
 - **OTel init** — telemetry is started once, by the Dockerfile's `--require @opentelemetry/auto-instrumentations-node/register` preload (it must load before any instrumented module is imported, which app code cannot guarantee). All export config is env-driven (`OTEL_*` in the chart); there is no programmatic SDK in the app. `OTEL_SDK_DISABLED=true` short-circuits it for tests/CI/local.
 - **src/metrics.ts** — OTel metrics surface (`timing` → ms histogram, `distribution` → unitless histogram, `counter` → monotonic counter, plus an observable `circuit_breaker.open` gauge). Instrument names map to the `competitive_intelligence_*` series the Grafana dashboard + PrometheusRule query. Exported OTLP to the cluster OTel Collector. Degrades to a no-op when no provider is registered (tests).
@@ -41,7 +42,7 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 ## Commands
 
 ```bash
-npm run dev          # Start full system (scheduler + Slack bot + /health)
+npm run dev          # Start full system (scheduler + alert sink + MCP server + /health)
 npm run build        # Compile TypeScript to dist/
 npm start            # Run compiled output
 npm run crawl        # One-off crawl via CLI
@@ -77,10 +78,11 @@ All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`
 - `SIGNIFICANCE_THRESHOLD` — 0–1, minimum change score to trigger an alert (default 0.3)
 - `CRAWL_INTERVAL_MINUTES` — default 60
 - `CRAWL_TIMEOUT_MS` — per-page fetch timeout (default 30000)
-- `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_APP_TOKEN` — Slack; absent → CLI-only
+- `SLACK_BOT_TOKEN` — bot token for the outbound alert sink (`chat:write`); absent → alerts log to stderr instead of posting
 - `SLACK_ALERT_CHANNEL` — alert channel (default `#competitive-intel`)
 - `USER_AGENT` — crawl request User-Agent (default `competitive-intelligence/0.1.0`)
-- `PORT` — HTTP health-server port (default 3000); in Slack HTTP mode the Bolt receiver binds `PORT + 1`
+- `PORT` — HTTP health-server port for `/health` + `/readyz` (default 3000)
+- `MCP_PORT` — MCP streamable-HTTP server port, the pull/query surface (default 3001)
 - `NODE_ENV` — development (default), production, or test
 - `LOG_LEVEL` — debug, info (default), warn, error. Zod-validated.
 
@@ -97,7 +99,7 @@ Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment
 - Vendored modules under `src/vendor/runtime/` stay byte-identical to `nanohype/library/runtime` — behavior changes land upstream with their tests, then `npm run sync:vendored` here (`sync:vendored:check` is the CI drift gate)
 - Bedrock-default LLM; prompt-cached analysis system prompt via Converse `cachePoint`
 - No framework lock-in for LLMs — direct SDK calls via the provider interface
-- Single-writer: `replicaCount: 1`; the crawl mutex prevents overlapping scheduler + slash-command runs (no horizontal scale without leader election)
+- Single-writer: `replicaCount: 1`; the scheduler, alert sink, and MCP server share one process, and the crawl mutex prevents overlapping scheduler + `trigger_crawl` runs (no horizontal scale without leader election)
 
 ## Testing
 
@@ -107,6 +109,8 @@ Tests are colocated as `src/**/*.test.ts`. Run with `npm test`.
 - `src/pipeline/chunker.test.ts` — recursive text splitting (short, long, IDs, overlap)
 - `src/pipeline/differ.test.ts` — semantic diff (empty store → baseline, high similarity, custom threshold)
 - `src/resilience/circuit-breaker.test.ts` — app wiring over the vendored breaker (config mapping, `circuit_breaker.open` gauge lifecycle)
+- `src/mcp/tools.test.ts` — the four tool handlers via the pure `callTool` dispatcher (input validation, `search_intel` returning context, empty-store case, `trigger_crawl`/`list_sources`/`status` pass-through) against interface fakes — no SDK mocking
+- `src/mcp/server.test.ts` — end-to-end: a real MCP client speaks the streamable-HTTP transport to a real in-process server (nothing in the SDK mocked; only the app's provider interfaces faked)
 - `src/crawler/fetcher.test.ts` — fetch-pipeline breaker wiring (per-host trip, window decay, half-open recovery, SSRF guard before the breaker)
 - `src/crawler/url-guard.test.ts` — SSRF guard (scheme, loopback, RFC1918, link-local/metadata, IPv6)
 
@@ -118,7 +122,8 @@ When adding tests: mock providers by implementing the interface directly (`LlmPr
 
 - `@aws-sdk/client-bedrock-runtime` — Bedrock LLM (Converse) + embeddings (Titan); on-account inference
 - `@anthropic-ai/sdk` / `openai` — direct API providers (optional)
-- `@slack/bolt` — Slack bot
+- `@modelcontextprotocol/sdk` — the MCP server (streamable HTTP), the pull/query surface
+- `@slack/web-api` — outbound alert sink (`chat.postMessage`)
 - `pg` — PostgreSQL driver for the durable pgvector backend
 - `cheerio` — HTML parsing
 - `zod` — config + schema validation

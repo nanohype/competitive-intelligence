@@ -19,7 +19,7 @@ competitive-intelligence crawls external competitor websites and feeds the conte
 ### Identity & secrets
 
 - No long-lived credentials in the app. Pods get AWS access via **EKS Pod Identity** — the Bedrock LLM + Titan embeddings run on the AWS credential chain, which resolves to the landing-zone `competitive-intelligence-platform` role. There are no static keys anywhere in the repo or image; `config.ts` reads no `AWS_ACCESS_KEY_ID`.
-- App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets Manager (`competitive-intelligence/<env>/*`) into a Kubernetes Secret, consumed via `envFrom` — never committed. Slack tokens and optional Anthropic/OpenAI keys come from `competitive-intelligence/<env>/app-secrets`; Postgres credentials come from the Aurora-managed `competitive-intelligence/<env>/db-credentials`.
+- App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets Manager (`competitive-intelligence/<env>/*`) into a Kubernetes Secret, consumed via `envFrom` — never committed. The Slack bot token (outbound alert sink) and optional Anthropic/OpenAI keys come from `competitive-intelligence/<env>/app-secrets`; Postgres credentials come from the Aurora-managed `competitive-intelligence/<env>/db-credentials`.
 - The optional Anthropic/OpenAI direct-API providers are off by default. Bedrock (on-account, EKS Pod Identity, no key) is the default for both LLM and embeddings.
 
 ### Data handling
@@ -30,7 +30,7 @@ competitive-intelligence crawls external competitor websites and feeds the conte
 ### Network
 
 - Default-deny `NetworkPolicy` with an explicit egress allow-list: DNS (kube-dns :53), HTTPS :443 to `0.0.0.0/0` **except `169.254.0.0/16`** (crawl targets + Bedrock + Slack, IMDS blocked), and Postgres :5432 to the cluster VPC CIDR.
-- **No public ingress.** There is no inbound HTTP product surface — the Slack integration runs in Socket Mode (an outbound WebSocket), and the only inbound traffic allowed is same-namespace health probes against `/health` + `/readyz`.
+- **No public ingress.** The MCP query surface is reachable only through the mcp-tunnel — an outbound-only `cloudflared` with no inbound ports and no public exposure — which the default-deny `NetworkPolicy` admits from the `mcp-tunnel` namespace alone (`namespaceSelector`). Every other source, including any direct hit on the MCP port, is denied. The only other inbound traffic allowed is same-namespace health probes against `/health` + `/readyz`. The Slack alert sink is outbound-only (`chat.postMessage`), never an inbound surface.
 
 ## Known limitations
 

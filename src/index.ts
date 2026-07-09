@@ -9,22 +9,22 @@ import { crawlAll } from './crawler/index.js';
 import { ingestAndDiff } from './pipeline/index.js';
 import { createIntelEngine } from './intel/index.js';
 import { createAlertEngine, type AlertSink } from './alerts/index.js';
-import { createSlackBot } from './slack/index.js';
+import { createSlackSink } from './alerts/slack-sink.js';
+import { createMcpHttpServer } from './mcp/server.js';
 import { createScheduler } from './scheduler/index.js';
 import { recordCrawlDuration } from './metrics.js';
 
-/** Outcome of a crawl trigger, so callers (the slash command) can report honestly. */
+/** Outcome of a crawl trigger, so callers (the MCP trigger_crawl tool) can report honestly. */
 export type CrawlOutcome = 'ran' | 'skipped';
 
 /**
  * Tiny liveness/readiness server.
  *
- * Bound unconditionally to `config.port` regardless of Slack transport:
- * Socket Mode opens an outbound WebSocket and binds no port, so without this
- * the pod has nothing for the kubelet to probe. `/health` is pure liveness
- * (process is up). `/readyz` is readiness — it resolves `store.count()`; a
- * reachable vector store → 200, anything else → 503 so the pod is pulled out
- * of rotation (and rollouts wait) until the backend recovers.
+ * Bound on `config.port`, separate from the MCP server (`config.mcpPort`).
+ * `/health` is pure liveness (process is up). `/readyz` is readiness — it
+ * resolves `store.count()`; a reachable vector store → 200, anything else →
+ * 503 so the pod is pulled out of rotation (and rollouts wait) until the
+ * backend recovers.
  */
 function createHealthServer(store: VectorStore): http.Server {
   return http.createServer((req, res) => {
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const sources = loadSourcesFromFile('sources.json');
 
   // ─── Core crawl+process function ───
-  // Mutex prevents overlapping runs from scheduler + slash command racing.
+  // Mutex prevents overlapping runs from scheduler + MCP trigger_crawl racing.
   let crawlInProgress = false;
 
   async function runCrawl(): Promise<CrawlOutcome> {
@@ -120,21 +120,26 @@ async function main(): Promise<void> {
   // ─── Intel engine ───
   const intel = createIntelEngine(embedder, store, llm);
 
-  // ─── Slack bot + alert sink ───
-  let alertSink: AlertSink = {
-    async send(channel: string, _message) {
-      logger.info('alert (no slack configured)', { channel });
-    },
-  };
-
-  let slackBot: Awaited<ReturnType<typeof createSlackBot>> | null = null;
-
-  if (config.slackBotToken) {
-    slackBot = createSlackBot(config, intel, runCrawl);
-    alertSink = slackBot.sink;
-  }
+  // ─── Outbound alert sink ───
+  // The radar posts its deterministic Block Kit alerts to Slack via the
+  // outbound web-api sink (circuit-breakered, 10s timeout). Absent bot token →
+  // alerts log only (CLI / local dev).
+  const alertSink: AlertSink = config.slackBotToken
+    ? createSlackSink(config.slackBotToken)
+    : {
+        async send(channel: string, _message) {
+          logger.info('alert (no slack configured)', { channel });
+        },
+      };
 
   const alertEngine = createAlertEngine(llm, alertSink, config);
+
+  // ─── MCP server (the pull/query surface) ───
+  // Streamable-HTTP MCP server on its own port. `trigger_crawl` calls the
+  // in-process single-writer `runCrawl` directly — no cross-pod RPC — because
+  // the scheduler, sink, and MCP server share this one process (replicaCount:
+  // 1). The mcp-tunnel is the only ingress (chart NetworkPolicy).
+  const mcpServer = createMcpHttpServer({ intel, runCrawl, sources });
 
   // ─── Scheduler ───
   const scheduler = createScheduler([
@@ -149,29 +154,38 @@ async function main(): Promise<void> {
   ]);
 
   // ─── Health server ───
-  // Always bound — k8s probes need a port even in Socket Mode (no inbound HTTP product surface).
   const healthServer = createHealthServer(store);
   await new Promise<void>((resolve) => healthServer.listen(config.port, resolve));
   logger.info('health server listening', { port: config.port });
 
+  // ─── MCP server ───
+  await mcpServer.listen(config.mcpPort);
+  logger.info('mcp server listening', { port: config.mcpPort });
+
   // ─── Start ───
   scheduler.start();
 
-  if (slackBot) {
-    await slackBot.start();
-  }
-
-  // Run initial crawl
+  // Run initial crawl — best-effort seeding. A failure here (the embedding
+  // backend unreachable at boot, say) must not crash a long-running service
+  // that can still serve MCP queries and will re-attempt on the next scheduled
+  // interval; the scheduler guards its own runs the same way.
   logger.info('running initial crawl');
-  await runCrawl();
+  try {
+    await runCrawl();
+  } catch (err) {
+    logger.error('initial crawl failed; continuing and will retry on the schedule', {
+      error: toMessage(err),
+    });
+  }
 
   logger.info('competitive-intelligence running', {
     sources: sources.length,
     crawlInterval: `${config.crawlIntervalMinutes}m`,
     vectorProvider: config.vectorProvider,
     llmProvider: config.llmProvider,
-    slackEnabled: !!config.slackBotToken,
+    alertSink: config.slackBotToken ? 'slack' : 'log',
     port: config.port,
+    mcpPort: config.mcpPort,
   });
 
   // ─── Graceful shutdown ───
@@ -181,7 +195,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info('shutting down', { signal });
     scheduler.stop();
-    if (slackBot) await slackBot.stop();
+    await mcpServer.close();
     await new Promise<void>((resolve) => healthServer.close(() => resolve()));
     // The auto-instrumentations preload registers its own SIGTERM/beforeExit
     // flush, so there is no programmatic SDK to shut down here.

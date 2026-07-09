@@ -39,6 +39,11 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+            # MCP streamable-HTTP server (env MCP_PORT). The tunnel routes here;
+            # the NetworkPolicy locks it to the mcp-tunnel namespace.
+            - name: mcp
+              containerPort: {{ .Values.service.mcpTargetPort }}
+              protocol: TCP
           env:
             # Non-secret config from values.env
             {{- range $k, $v := .Values.env }}

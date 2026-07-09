@@ -13,7 +13,8 @@ On-call reference for the `competitive-intelligence` Platform tenant. Pairs with
   election). Durable state in Aurora Serverless v2 (pgvector). Bedrock for
   LLM + embeddings via EKS Pod Identity.
 - **Probes:** `/health` (liveness), `/readyz` (readiness — fails when the vector
-  store is unreachable). HTTP server on `PORT` regardless of Slack transport.
+  store is unreachable) on `PORT`. The MCP query surface runs on `MCP_PORT`,
+  fronted by the mcp-tunnel.
 - **Logs:** structured JSON to stderr → cluster log forwarder → Loki.
 - **Telemetry:** OTLP traces + metrics → `grafana-agent.monitoring` → Tempo + AMP.
 
@@ -73,8 +74,9 @@ re-baselines every source and silences one crawl's worth of real changes.
 
 ### Trigger an immediate crawl
 
-`/competitive-intelligence crawl` in Slack, or `npm run crawl` locally. The crawl
-mutex serializes it against the scheduler, so it's safe to run anytime.
+The MCP `trigger_crawl` tool (from any Claude surface), or `npm run crawl`
+locally. The crawl mutex serializes it against the scheduler, so it's safe to
+run anytime.
 
 ### "Alerts stopped but crawls succeed"
 
