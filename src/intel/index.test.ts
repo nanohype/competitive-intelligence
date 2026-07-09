@@ -61,4 +61,14 @@ describe('createIntelEngine', () => {
 
     expect(store.search).toHaveBeenCalledWith([0.1, 0.2, 0.3], 3, { competitor: 'acme' });
   });
+
+  it('matches the competitor case-insensitively — an MCP caller passes "Replit"', async () => {
+    const { engine, store } = makeEngine([hit('1', 'c')]);
+
+    await engine.retrieve('q', { competitor: 'Replit' });
+
+    // Stored competitor ids are lowercase (source convention); the filter is
+    // lowered so a natural-language caller does not have to know that.
+    expect(store.search).toHaveBeenCalledWith([0.1, 0.2, 0.3], 10, { competitor: 'replit' });
+  });
 });

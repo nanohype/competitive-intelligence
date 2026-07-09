@@ -15,9 +15,12 @@ export interface FetchOptions {
   readonly userAgent: string;
   /** Hard cap on the response body in bytes. @default 10 MiB */
   readonly maxBytes?: number;
+  /** Max redirect hops to follow (each SSRF-guarded). @default 5 */
+  readonly maxRedirects?: number;
 }
 
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_REDIRECTS = 5;
 
 // Per-host circuit breakers so one flaky site doesn't block all sources.
 const breakers = new Map<string, CircuitBreaker>();
@@ -40,6 +43,7 @@ function breakerFor(url: string): CircuitBreaker {
 
 export async function fetchPage(url: string, options: FetchOptions): Promise<FetchResult> {
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
 
   // SSRF guard: scheme allowlist + private-IP / loopback / metadata block.
   // Runs before circuit-breaker bookkeeping so rejected hosts never get
@@ -51,48 +55,70 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
 
     try {
-      logger.debug('fetching', { url });
+      // Follow redirects manually so every hop is SSRF-guarded before we
+      // fetch it — `redirect: "follow"` would chase a Location header to a
+      // private/metadata address without a guard check. Competitor blogs and
+      // changelogs routinely 30x (host canonicalisation, trailing slashes), so
+      // dropping redirects silently starves the index; following them, guarded
+      // and bounded, is both safe and necessary. The timeout spans the whole
+      // chain and the breaker is keyed on the original host.
+      let current = url;
+      for (let hop = 0; ; hop++) {
+        logger.debug('fetching', { url: current });
 
-      // `redirect: "manual"` means a 3xx surfaces here as `response.ok ===
-      // false` rather than silently routing to a destination that wasn't
-      // guard-checked. Operators who need to follow redirects should
-      // promote each redirect target to a first-class source.
-      const response = await fetch(url, {
-        signal: controller.signal,
-        redirect: 'manual',
-        headers: {
-          'User-Agent': options.userAgent,
-          Accept: 'text/html,application/xhtml+xml',
-        },
-      });
+        const response = await fetch(current, {
+          signal: controller.signal,
+          redirect: 'manual',
+          headers: {
+            'User-Agent': options.userAgent,
+            Accept: 'text/html,application/xhtml+xml',
+          },
+        });
 
-      if (response.status >= 300 && response.status < 400) {
-        throw new Error(`HTTP ${response.status} redirect from ${url} (follow disabled)`);
+        if (response.status >= 300 && response.status < 400) {
+          if (hop >= maxRedirects) {
+            throw new Error(`too many redirects (>${maxRedirects}) starting at ${url}`);
+          }
+          const location = response.headers.get('location');
+          if (!location) {
+            throw new Error(`HTTP ${response.status} from ${current} with no Location header`);
+          }
+          // Resolve a relative Location against the current URL, then SSRF-guard
+          // the target BEFORE following it — this is what makes redirect
+          // following safe. A redirect to a blocked address throws here.
+          const next = new URL(location, current).toString();
+          await guardUrl(next);
+          logger.debug('redirect', { from: current, to: next, status: response.status });
+          current = next;
+          continue;
+        }
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} for ${current}`);
+        }
+
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && Number(contentLength) > maxBytes) {
+          throw new Error(`response too large: ${contentLength} bytes (max ${maxBytes})`);
+        }
+
+        const html = await readBodyCapped(response, maxBytes);
+        const headers: Record<string, string> = {};
+        response.headers.forEach((v, k) => {
+          headers[k] = v;
+        });
+
+        // `url` is the FINAL location after redirects, so downstream metadata
+        // records where the content actually came from.
+        logger.info('fetched', { url: current, status: response.status, bytes: html.length });
+
+        return {
+          url: current,
+          html,
+          statusCode: response.status,
+          fetchedAt: new Date(),
+          headers,
+        };
       }
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} for ${url}`);
-      }
-
-      const contentLength = response.headers.get('content-length');
-      if (contentLength && Number(contentLength) > maxBytes) {
-        throw new Error(`response too large: ${contentLength} bytes (max ${maxBytes})`);
-      }
-
-      const html = await readBodyCapped(response, maxBytes);
-      const headers: Record<string, string> = {};
-      response.headers.forEach((v, k) => {
-        headers[k] = v;
-      });
-
-      logger.info('fetched', { url, status: response.status, bytes: html.length });
-
-      return {
-        url,
-        html,
-        statusCode: response.status,
-        fetchedAt: new Date(),
-        headers,
-      };
     } finally {
       clearTimeout(timeout);
     }
