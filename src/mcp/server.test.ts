@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AddressInfo } from 'node:net';
 import http from 'node:http';
+import { SignJWT, generateKeyPair, type CryptoKey } from 'jose';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createMcpHttpServer, type McpHttpServer } from './server.js';
+import { createOAuthProtection, createWorkosVerifier } from './oauth.js';
 import type { McpToolDeps } from './tools.js';
 import { createIntelEngine } from '../intel/index.js';
 import type { EmbeddingProvider } from '../providers/embeddings.js';
@@ -122,5 +124,96 @@ describe('MCP streamable-HTTP server (end-to-end)', () => {
       arguments: { question: '' },
     });
     expect(result.isError).toBe(true);
+  });
+});
+
+// OAuth resource-server mode, end-to-end over real HTTP. A local RSA key set
+// signs the tokens and backs the verifier (no live WorkOS, no SDK mocking), so
+// the whole path — metadata discovery, the 401 challenge, and audience binding
+// on a real request — is exercised as a Claude connector would drive it.
+describe('MCP streamable-HTTP server (OAuth enabled)', () => {
+  const ISSUER = 'https://ci-tenant.authkit.app';
+  const RESOURCE = 'https://ci.example.com/mcp';
+
+  let privateKey: CryptoKey;
+  let publicKey: CryptoKey;
+  let server: McpHttpServer;
+  let base: string;
+
+  beforeAll(async () => {
+    ({ privateKey, publicKey } = await generateKeyPair('RS256'));
+  });
+
+  async function mint(aud = RESOURCE): Promise<string> {
+    return new SignJWT({})
+      .setProtectedHeader({ alg: 'RS256' })
+      .setSubject('user_123')
+      .setIssuer(ISSUER)
+      .setAudience(aud)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(privateKey);
+  }
+
+  beforeEach(async () => {
+    const verify = createWorkosVerifier({ issuer: ISSUER, audience: RESOURCE, jwks: publicKey });
+    const oauth = createOAuthProtection({ issuer: ISSUER, resource: RESOURCE }, verify);
+    server = createMcpHttpServer(makeDeps(), oauth);
+    const p = await port(server);
+    base = `http://127.0.0.1:${p}`;
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it('serves Protected Resource Metadata unauthenticated', async () => {
+    const res = await fetch(`${base}/.well-known/oauth-protected-resource`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      resource: string;
+      authorization_servers: string[];
+      bearer_methods_supported: string[];
+    };
+    expect(body.resource).toBe(RESOURCE);
+    expect(body.authorization_servers).toEqual([ISSUER]);
+    expect(body.bearer_methods_supported).toEqual(['header']);
+  });
+
+  it('401s /mcp without a token, pointing at the resource metadata', async () => {
+    const res = await fetch(`${base}/mcp`, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toContain(
+      'resource_metadata="https://ci.example.com/.well-known/oauth-protected-resource/mcp"',
+    );
+  });
+
+  it('401s a token bound to a different resource (RFC 8707 audience)', async () => {
+    const token = await mint('https://someone-else.example.com/mcp');
+    const res = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: '{}',
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toContain('error="invalid_token"');
+  });
+
+  it('admits a correctly-audienced token through the full MCP handshake', async () => {
+    const token = await mint();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'list_sources',
+      'search_intel',
+      'status',
+      'trigger_crawl',
+    ]);
+    await client.close();
   });
 });

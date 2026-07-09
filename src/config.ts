@@ -43,6 +43,23 @@ const schema = z
     // MCP streamable-HTTP server port — the pull/query surface Claude reaches
     // over the mcp-tunnel. Separate from `port` (the /health+/readyz server).
     mcpPort: z.number().default(3001),
+
+    // ─── MCP OAuth 2.1 resource-server protection (optional) ───
+    // `none` (default) → the MCP port stays open, protected by the mcp-tunnel +
+    // NetworkPolicy alone. `workos` → the port enforces a WorkOS AuthKit bearer
+    // token (RFC 9728 / RFC 8707), so it can be added as a Claude custom
+    // connector over a public tunnel. The authorization server is WorkOS,
+    // configured in their dashboard — this app is only the resource server.
+    mcpAuth: z.enum(['none', 'workos']).default('none'),
+    // WorkOS AuthKit issuer, e.g. https://your-app.authkit.app — both the `iss`
+    // the token must carry and the base its JWKS is fetched from.
+    workosAuthkitIssuer: z.string().url().optional(),
+    // This server's canonical public URL including the /mcp path. The RFC 8707
+    // resource indicator and the `aud` every accepted token must carry.
+    mcpPublicUrl: z.string().url().optional(),
+    // Optional space/comma-delimited scopes every request must present.
+    mcpAuthScopes: z.string().optional(),
+
     nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
     logLevel: logLevelSchema,
   })
@@ -70,6 +87,25 @@ const schema = z
       });
     }
     // Bedrock uses AWS credential chain — no key validation needed
+
+    // WorkOS resource-server protection needs both the issuer (to verify the
+    // token) and this server's canonical URI (the audience it must be bound to).
+    if (data.mcpAuth === 'workos') {
+      if (!data.workosAuthkitIssuer) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'WORKOS_AUTHKIT_ISSUER is required when MCP_AUTH=workos',
+          path: ['workosAuthkitIssuer'],
+        });
+      }
+      if (!data.mcpPublicUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'MCP_PUBLIC_URL is required when MCP_AUTH=workos (the token audience)',
+          path: ['mcpPublicUrl'],
+        });
+      }
+    }
   });
 
 export type Config = z.infer<typeof schema>;
@@ -102,6 +138,12 @@ export function loadConfig(): Config {
     significanceThreshold: num(process.env.SIGNIFICANCE_THRESHOLD),
     port: num(process.env.PORT),
     mcpPort: num(process.env.MCP_PORT),
+    mcpAuth: process.env.MCP_AUTH,
+    // `|| undefined` so a chart-rendered empty string ("") reads as unset rather
+    // than a defined-but-empty value that would fail the `.url()` check.
+    workosAuthkitIssuer: process.env.WORKOS_AUTHKIT_ISSUER || undefined,
+    mcpPublicUrl: process.env.MCP_PUBLIC_URL || undefined,
+    mcpAuthScopes: process.env.MCP_AUTH_SCOPES || undefined,
     nodeEnv: process.env.NODE_ENV,
     logLevel: process.env.LOG_LEVEL,
   });

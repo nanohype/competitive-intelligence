@@ -14,10 +14,10 @@ export default defineConfig({
       // Floors set just below current measured coverage so CI fails on a
       // regression, not on the current state. Ratchet up as the suite grows.
       thresholds: {
-        lines: 52, // measured 53.2
-        functions: 50, // measured 52.51
-        branches: 59, // measured 60.74
-        statements: 52, // measured 53.38
+        lines: 55, // measured 55.26
+        functions: 53, // measured 54.40
+        branches: 59, // measured 60.54
+        statements: 55, // measured 55.16
       },
     },
   },

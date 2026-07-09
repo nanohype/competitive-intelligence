@@ -215,6 +215,22 @@ env:
   # MCP streamable-HTTP server port — the pull/query surface. Matches
   # service.mcpTargetPort and the deployment's mcp containerPort.
   MCP_PORT: '3001'
+  # ─── MCP OAuth 2.1 resource-server protection ───
+  # `none` (default) → the MCP port stays open, guarded by the mcp-tunnel +
+  # NetworkPolicy alone (the current deployment posture). Flip to `workos` to
+  # require a WorkOS AuthKit bearer token on /mcp — needed to add this surface as
+  # a Claude custom connector over a public tunnel. When set to `workos`, also
+  # set WORKOS_AUTHKIT_ISSUER and MCP_PUBLIC_URL (per-env, below). WorkOS is the
+  # authorization server (its dashboard); this app is only the resource server,
+  # so it holds NO client secret — token signatures verify against the public
+  # WorkOS JWKS. See docs/mcp-oauth.md.
+  MCP_AUTH: none
+  # WorkOS AuthKit issuer + this server's canonical public /mcp URL (the RFC 8707
+  # audience). Left unset here (empty → open mode); set both per-env when
+  # MCP_AUTH=workos. Do NOT set them to empty strings — an empty value fails URL
+  # validation; add the keys only when enabling auth.
+  #   WORKOS_AUTHKIT_ISSUER: https://<tenant>.authkit.app
+  #   MCP_PUBLIC_URL: https://<public-tunnel-host>/mcp
   NODE_ENV: production
   # OTel — exports to the grafana-agent OTLP receiver in the monitoring namespace,
   # which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecar.
