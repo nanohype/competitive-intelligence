@@ -122,3 +122,51 @@ describe('fetchPage circuit-breaker wiring', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('fetchPage redirect following (SSRF-guarded per hop)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const redirect = (location: string, status = 301) =>
+    Promise.resolve(new Response(null, { status, headers: { location } }));
+
+  it('follows a redirect whose target passes the SSRF guard, recording the final URL', async () => {
+    const start = 'http://203.0.113.20/blog';
+    const dest = 'http://203.0.113.21/blog/';
+    const fetchMock = vi.fn((input: string | URL) =>
+      String(input) === start ? redirect(dest, 308) : okResponse(),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchPage(start, options);
+    expect(result.statusCode).toBe(200);
+    expect(result.url).toBe(dest);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a redirect to an SSRF-blocked address before following it', async () => {
+    const start = 'http://203.0.113.22/blog';
+    const fetchMock = vi.fn((input: string | URL) =>
+      String(input) === start ? redirect('http://127.0.0.1/internal', 302) : okResponse(),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    // The guard runs on the redirect target BEFORE it is fetched, so the
+    // blocked address is never contacted.
+    await expect(fetchPage(start, options)).rejects.toBeInstanceOf(UrlGuardError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps the redirect chain instead of looping forever', async () => {
+    // Every hop redirects to a fresh public host — the guard admits each, so
+    // it is the bound (not the guard) that stops it.
+    const fetchMock = vi.fn((input: string | URL) => {
+      const n = Number(/203\.0\.113\.(\d+)/.exec(String(input))?.[1] ?? '30');
+      return redirect(`http://203.0.113.${n + 1}/x`, 301);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchPage('http://203.0.113.30/x', options)).rejects.toThrow('too many redirects');
+  });
+});

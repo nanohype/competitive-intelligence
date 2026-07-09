@@ -40,8 +40,12 @@ export function createIntelEngine(
     // Embed the question.
     const [embedding] = await embedder.embed([question]);
 
-    // Search with an optional competitor filter.
-    const filter = options?.competitor ? { competitor: options.competitor } : undefined;
+    // Search with an optional competitor filter. Match case-insensitively:
+    // competitor ids are stored lowercase (source convention), but an MCP
+    // caller reasons in natural language and passes "Replit", not "replit".
+    const filter = options?.competitor
+      ? { competitor: options.competitor.toLowerCase() }
+      : undefined;
     return store.search(embedding, topK, filter);
   }
 
