@@ -11,11 +11,19 @@ import { createIntelEngine } from './intel/index.js';
 import { createAlertEngine, type AlertSink } from './alerts/index.js';
 import { createSlackSink } from './alerts/slack-sink.js';
 import { createMcpHttpServer } from './mcp/server.js';
+import { createOAuthProtection, type OAuthProtection } from './mcp/oauth.js';
 import { createScheduler } from './scheduler/index.js';
 import { recordCrawlDuration } from './metrics.js';
 
 /** Outcome of a crawl trigger, so callers (the MCP trigger_crawl tool) can report honestly. */
 export type CrawlOutcome = 'ran' | 'skipped';
+
+/** Split the optional MCP_AUTH_SCOPES env (space- or comma-delimited) into a scope list. */
+function parseScopes(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const scopes = raw.split(/[\s,]+/).filter(Boolean);
+  return scopes.length > 0 ? scopes : undefined;
+}
 
 /**
  * Tiny liveness/readiness server.
@@ -134,12 +142,31 @@ async function main(): Promise<void> {
 
   const alertEngine = createAlertEngine(llm, alertSink, config);
 
+  // ─── MCP OAuth resource-server protection (optional) ───
+  // When MCP_AUTH=workos the MCP port becomes an OAuth 2.1 resource server that
+  // requires a WorkOS AuthKit bearer token bound to this server's canonical URI
+  // (RFC 8707 audience). Unset → open mode: the mcp-tunnel + NetworkPolicy are
+  // the only guard, exactly as before. WorkOS is the authorization server,
+  // configured in its dashboard; this is only the resource-server half.
+  let oauth: OAuthProtection | undefined;
+  if (config.mcpAuth === 'workos' && config.workosAuthkitIssuer && config.mcpPublicUrl) {
+    oauth = createOAuthProtection({
+      issuer: config.workosAuthkitIssuer,
+      resource: config.mcpPublicUrl,
+      requiredScopes: parseScopes(config.mcpAuthScopes),
+    });
+    logger.info('mcp oauth enabled (workos resource server)', {
+      issuer: config.workosAuthkitIssuer,
+      resource: config.mcpPublicUrl,
+    });
+  }
+
   // ─── MCP server (the pull/query surface) ───
   // Streamable-HTTP MCP server on its own port. `trigger_crawl` calls the
   // in-process single-writer `runCrawl` directly — no cross-pod RPC — because
   // the scheduler, sink, and MCP server share this one process (replicaCount:
   // 1). The mcp-tunnel is the only ingress (chart NetworkPolicy).
-  const mcpServer = createMcpHttpServer({ intel, runCrawl, sources });
+  const mcpServer = createMcpHttpServer({ intel, runCrawl, sources }, oauth);
 
   // ─── Scheduler ───
   const scheduler = createScheduler([
@@ -186,6 +213,7 @@ async function main(): Promise<void> {
     alertSink: config.slackBotToken ? 'slack' : 'log',
     port: config.port,
     mcpPort: config.mcpPort,
+    mcpAuth: oauth ? 'workos' : 'open',
   });
 
   // ─── Graceful shutdown ───

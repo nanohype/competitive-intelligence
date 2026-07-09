@@ -15,6 +15,10 @@ On-call reference for the `competitive-intelligence` Platform tenant. Pairs with
 - **Probes:** `/health` (liveness), `/readyz` (readiness — fails when the vector
   store is unreachable) on `PORT`. The MCP query surface runs on `MCP_PORT`,
   fronted by the mcp-tunnel.
+- **MCP auth:** open by default (mcp-tunnel + NetworkPolicy only). Optionally an
+  OAuth 2.1 resource server delegating to WorkOS AuthKit (`MCP_AUTH=workos`) so
+  it can be a Claude custom connector — dashboard, env, connector, and
+  self-tunnel steps in [`mcp-oauth.md`](mcp-oauth.md).
 - **Logs:** structured JSON to stderr → cluster log forwarder → Loki.
 - **Telemetry:** OTLP traces + metrics → `grafana-agent.monitoring` → Tempo + AMP.
 

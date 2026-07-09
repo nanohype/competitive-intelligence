@@ -2,6 +2,7 @@ import http from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerTools, type McpToolDeps } from './tools.js';
+import type { OAuthProtection } from './oauth.js';
 import { logger, toMessage } from '../logger.js';
 
 /** The path the streamable-HTTP transport is served on. */
@@ -31,12 +32,17 @@ export interface McpHttpServer {
  * Streamable-HTTP MCP server. Bound on its own port (`MCP_PORT`), separate from
  * the `/health`+`/readyz` liveness server on `PORT`. Stateless mode: each
  * request gets a fresh `Server` + transport, so there is no session state to
- * carry across the tunnel. The mcp-tunnel (outbound-only `cloudflared`) is the
- * only ingress to this port — enforced by the chart NetworkPolicy.
+ * carry across the tunnel.
+ *
+ * `oauth` is optional. Unset → the port stays open, protected by the mcp-tunnel
+ * + NetworkPolicy alone (the default deployment mode). Set → the port becomes an
+ * OAuth 2.1 resource server: it advertises Protected Resource Metadata and
+ * requires a valid WorkOS-issued bearer token on `/mcp`, so the surface can be
+ * added directly as a Claude custom connector over a public tunnel.
  */
-export function createMcpHttpServer(deps: McpToolDeps): McpHttpServer {
+export function createMcpHttpServer(deps: McpToolDeps, oauth?: OAuthProtection): McpHttpServer {
   const httpServer = http.createServer((req, res) => {
-    void handleRequest(req, res, deps);
+    void handleRequest(req, res, deps, oauth);
   });
 
   return {
@@ -52,12 +58,37 @@ async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   deps: McpToolDeps,
+  oauth?: OAuthProtection,
 ): Promise<void> {
   const url = req.url ?? '';
+  const pathname = url.split('?', 1)[0];
+
+  // Protected Resource Metadata (RFC 9728) — always unauthenticated, so a client
+  // can discover the authorization server before it holds a token. Only mounted
+  // when OAuth is enabled.
+  if (oauth?.isMetadataRequest(pathname)) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(oauth.metadata));
+    return;
+  }
+
   if (!url.startsWith(MCP_PATH)) {
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ status: 'not_found' }));
     return;
+  }
+
+  // Bearer enforcement on /mcp. Open mode (oauth unset) skips straight through.
+  if (oauth) {
+    const decision = await oauth.authorize(req.headers.authorization);
+    if (!decision.ok) {
+      res.writeHead(decision.status, {
+        'content-type': 'application/json',
+        'www-authenticate': decision.wwwAuthenticate,
+      });
+      res.end(JSON.stringify(decision.body));
+      return;
+    }
   }
 
   const server = createMcpServer(deps);
