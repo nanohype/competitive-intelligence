@@ -27,7 +27,7 @@ spec:
       annotations:
         argocd.argoproj.io/sync-wave: '{{`{{syncWave}}`}}'
     spec:
-      project: tenant-protohype
+      project: competitive-intelligence
       sources:
         - repoURL: https://github.com/nanohype/competitive-intelligence.git
           targetRevision: main
@@ -41,7 +41,7 @@ spec:
           ref: values
       destination:
         server: '{{`{{server}}`}}'
-        namespace: tenants-protohype
+        namespace: tenants-competitive-intelligence
       syncPolicy:
         automated:
           prune: true
