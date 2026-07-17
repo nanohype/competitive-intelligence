@@ -1,5 +1,5 @@
 # Base values for competitive-intelligence (all environments). Per-env deltas
-# in values-{dev,staging,production}.yaml.
+# in values-{development,staging,production}.yaml.
 
 image:
   repository: ghcr.io/nanohype/competitive-intelligence

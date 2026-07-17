@@ -1,0 +1,18 @@
+# Development delta.
+image:
+  tag: development
+
+replicaCount: 1
+
+externalSecret:
+  remoteRefSecret: competitive-intelligence/development/app-secrets
+  dbCredentialsSecret: competitive-intelligence/development/db-credentials
+
+env:
+  NODE_ENV: production
+  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,deployment.environment=development,agents.tenant=protohype,agents.platform=competitive-intelligence'
+
+tenantInfra:
+  # Fill the empties below from the landing-zone competitive-intelligence-platform
+  # development outputs (terragrunt output -json). Slot names match output names 1:1.
+  pgHost: '' # aurora_cluster_endpoint

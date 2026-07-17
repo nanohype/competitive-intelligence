@@ -100,14 +100,14 @@ The application Deployment plus everything that supports it. Templates under `ch
 | `prometheusrule.yaml`    | Alerts — crawl failures, circuit-breaker open, alert-send failures, pgvector unreachable                                                                                                                                            |
 | `grafana-dashboard.yaml` | ConfigMap loading `chart/dashboards/competitive-intelligence.json`                                                                                                                                                                  |
 
-`values.yaml` is the base; `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no public ingress**: the MCP surface is reached only through the mcp-tunnel (outbound-only `cloudflared`), which the NetworkPolicy admits from the `mcp-tunnel` namespace alone; the only other inbound is same-namespace health probes. Wiring the tunnel addon + the per-tenant route is `eks-gitops` + operator work — this repo just ships a tunnel-ready Service locked by NetworkPolicy.
+`values.yaml` is the base; `values-development.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no public ingress**: the MCP surface is reached only through the mcp-tunnel (outbound-only `cloudflared`), which the NetworkPolicy admits from the `mcp-tunnel` namespace alone; the only other inbound is same-namespace health probes. Wiring the tunnel addon + the per-tenant route is `eks-gitops` + operator work — this repo just ships a tunnel-ready Service locked by NetworkPolicy.
 
 ### Required tenant files
 
 A valid tenant in this repo is exactly these three, plus the chart's per-env values:
 
 - `platform.yaml` — the `BudgetPolicy` + `Platform` CRs
-- `chart/` — the chart above, with `values.yaml` + `values-{dev,staging,production}.yaml`
+- `chart/` — the chart above, with `values.yaml` + `values-{development,staging,production}.yaml`
 - `gitops/applicationset-entry.yaml` — the ApplicationSet entry registered into `nanohype/eks-gitops` (matrix generator over clusters × the app, Helm multi-source `$values` resolving `values.yaml` + `values-<env>.yaml`)
 
 ## Add a crawl source

@@ -8,7 +8,7 @@ The workload is a single long-lived process: a scheduler that runs one global cr
 
 - `Chart.yaml` — chart metadata + the `tenant-chart-base` dependency (see Dependencies)
 - `values.yaml` — base values (all environments)
-- `values-dev.yaml` / `values-staging.yaml` / `values-production.yaml` — per-env deltas
+- `values-development.yaml` / `values-staging.yaml` / `values-production.yaml` — per-env deltas
 - `charts/tenant-chart-base/` — vendored library subchart (see Dependencies)
 - `dashboards/competitive-intelligence.json` — the Grafana dashboard JSON loaded by `grafana-dashboard.yaml`
 - `templates/`

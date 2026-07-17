@@ -83,7 +83,7 @@ Alerts are outbound only. The radar posts its deterministic Block Kit alerts to 
 
 Ships as a [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) Platform tenant. The trio:
 
-- **`chart/`** — the application Helm chart: Deployment (`replicaCount: 1`, single-writer crawl mutex) + Service (the `/health`+`/readyz` port and the MCP port) + NetworkPolicy (default-deny + egress allow-list, IMDS blocked; ingress only same-namespace probes and the MCP port from the `mcp-tunnel` namespace) + ServiceAccount (Pod Identity) + ExternalSecret (ESO), plus PrometheusRule alerts and a Grafana dashboard. Per-env deltas in `chart/values-{dev,staging,production}.yaml`.
+- **`chart/`** — the application Helm chart: Deployment (`replicaCount: 1`, single-writer crawl mutex) + Service (the `/health`+`/readyz` port and the MCP port) + NetworkPolicy (default-deny + egress allow-list, IMDS blocked; ingress only same-namespace probes and the MCP port from the `mcp-tunnel` namespace) + ServiceAccount (Pod Identity) + ExternalSecret (ESO), plus PrometheusRule alerts and a Grafana dashboard. Per-env deltas in `chart/values-{development,staging,production}.yaml`.
 - **`platform.yaml`** — the `Platform` CR + `BudgetPolicy` declaring the tenant boundary (`tenant: protohype`, namespace `tenants-protohype`, project `tenant-protohype`). The operator reconciles the Namespace, ResourceQuota, NetworkPolicy, and ArgoCD AppProject.
 - **`gitops/applicationset-entry.yaml`** — the ApplicationSet entry registered into [`nanohype/eks-gitops`](https://github.com/nanohype/eks-gitops) for ArgoCD reconciliation.
 
