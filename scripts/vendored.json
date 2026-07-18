@@ -1,8 +1,6 @@
 {
   "entries": [
     { "src": "library/scripts/sync-vendored.mjs", "dest": "scripts/sync-vendored.mjs" },
-    { "src": "library/config/prettierrc.json", "dest": ".prettierrc.json" },
-    { "src": "library/config/eslint.base.mjs", "dest": "eslint.base.mjs" },
     {
       "src": "library/runtime/src/circuit-breaker.ts",
       "dest": "src/vendor/runtime/circuit-breaker.ts"
