@@ -1,25 +1,25 @@
-import { describe, it, expect } from 'vitest';
-import { createAlertEngine, type AlertSink } from './index.js';
-import type { DiffResult } from '../pipeline/differ.js';
-import type { LlmProvider, LlmResponse } from '../providers/llm.js';
-import type { Chunk } from '../pipeline/chunker.js';
-import type { Config } from '../config.js';
-import type { SlackBlocks } from './formatter.js';
+import { describe, expect, it } from "vitest";
+import type { Config } from "../config.js";
+import type { Chunk } from "../pipeline/chunker.js";
+import type { DiffResult } from "../pipeline/differ.js";
+import type { LlmProvider, LlmResponse } from "../providers/llm.js";
+import type { SlackBlocks } from "./formatter.js";
+import { type AlertSink, createAlertEngine } from "./index.js";
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
-    llmProvider: 'anthropic',
-    embeddingModel: 'text-embedding-3-small',
+    llmProvider: "anthropic",
+    embeddingModel: "text-embedding-3-small",
     embeddingDimensions: 1024,
-    vectorProvider: 'memory',
+    vectorProvider: "memory",
     crawlIntervalMinutes: 60,
     crawlTimeoutMs: 30_000,
-    userAgent: 'test',
-    slackAlertChannel: '#test',
+    userAgent: "test",
+    slackAlertChannel: "#test",
     significanceThreshold: 0.3,
     port: 3000,
-    nodeEnv: 'test',
-    logLevel: 'error',
+    nodeEnv: "test",
+    logLevel: "error",
     ...overrides,
   } as Config;
 }
@@ -49,7 +49,7 @@ function recordingSink(failing = false): {
   const sends: Array<{ channel: string; message: SlackBlocks }> = [];
   const sink: AlertSink = {
     async send(channel, message) {
-      if (failing) throw new Error('slack down');
+      if (failing) throw new Error("slack down");
       sends.push({ channel, message });
     },
   };
@@ -58,20 +58,20 @@ function recordingSink(failing = false): {
 
 function chunk(text: string): Chunk {
   return {
-    id: 's:0',
+    id: "s:0",
     text,
     index: 0,
-    sourceId: 'acme:pricing',
-    metadata: { sourceId: 'acme:pricing' },
+    sourceId: "acme:pricing",
+    metadata: { sourceId: "acme:pricing" },
   };
 }
 
 function makeDiff(overrides: Partial<DiffResult> = {}): DiffResult {
   return {
-    sourceId: 'acme:pricing',
-    competitor: 'acme',
+    sourceId: "acme:pricing",
+    competitor: "acme",
     changeScore: 0.5,
-    newChunks: [chunk('new enterprise tier launched')],
+    newChunks: [chunk("new enterprise tier launched")],
     unchangedChunks: [],
     totalChunks: 1,
     ...overrides,
@@ -79,25 +79,25 @@ function makeDiff(overrides: Partial<DiffResult> = {}): DiffResult {
 }
 
 const ANALYSIS = JSON.stringify({
-  summary: 'Acme launched an enterprise tier.',
-  significance: 'high',
-  signals: ['new enterprise tier'],
+  summary: "Acme launched an enterprise tier.",
+  significance: "high",
+  signals: ["new enterprise tier"],
 });
 
-describe('alert engine', () => {
-  it('sends one alert on the configured channel for a significant diff', async () => {
+describe("alert engine", () => {
+  it("sends one alert on the configured channel for a significant diff", async () => {
     const { sink, sends } = recordingSink();
     const engine = createAlertEngine(fakeLlm(ANALYSIS), sink, makeConfig());
 
     const analyses = await engine.processDiffs([makeDiff()]);
 
     expect(analyses).toHaveLength(1);
-    expect(analyses[0].significance).toBe('high');
+    expect(analyses[0].significance).toBe("high");
     expect(sends).toHaveLength(1);
-    expect(sends[0].channel).toBe('#test');
+    expect(sends[0].channel).toBe("#test");
   });
 
-  it('does not alert when changeScore is below the threshold', async () => {
+  it("does not alert when changeScore is below the threshold", async () => {
     const { sink, sends } = recordingSink();
     const engine = createAlertEngine(
       fakeLlm(ANALYSIS),
@@ -111,7 +111,7 @@ describe('alert engine', () => {
     expect(sends).toHaveLength(0);
   });
 
-  it('does not alert when there are no new chunks even above the threshold', async () => {
+  it("does not alert when there are no new chunks even above the threshold", async () => {
     const { sink, sends } = recordingSink();
     const engine = createAlertEngine(fakeLlm(ANALYSIS), sink, makeConfig());
 
@@ -121,13 +121,13 @@ describe('alert engine', () => {
     expect(sends).toHaveLength(0);
   });
 
-  it('still returns the analysis when the sink send fails', async () => {
+  it("still returns the analysis when the sink send fails", async () => {
     const { sink } = recordingSink(true);
     const engine = createAlertEngine(fakeLlm(ANALYSIS), sink, makeConfig());
 
     // processDiffs must resolve (swallowed send error) and keep the analysis.
     const analyses = await engine.processDiffs([makeDiff()]);
     expect(analyses).toHaveLength(1);
-    expect(analyses[0].sourceId).toBe('acme:pricing');
+    expect(analyses[0].sourceId).toBe("acme:pricing");
   });
 });

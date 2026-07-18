@@ -21,11 +21,11 @@
  * `competitive_intelligence_crawl_failures_total`. Keep instrument names in
  * sync with the chart.
  */
-import { createMetrics } from './vendor/runtime/metrics.js';
+import { createMetrics } from "./vendor/runtime/metrics.js";
 
 const metrics = createMetrics({
-  meterName: 'competitive-intelligence',
-  namespace: 'competitive_intelligence',
+  meterName: "competitive-intelligence",
+  namespace: "competitive_intelligence",
 });
 
 // ─── Generic helpers ───
@@ -56,33 +56,33 @@ export function counter(name: string, value = 1, dimensions?: Record<string, str
 
 /** Wall-clock duration of one crawl run, in ms. */
 export function recordCrawlDuration(ms: number): void {
-  timing('crawl.duration_ms', ms);
+  timing("crawl.duration_ms", ms);
 }
 
 /** One crawled source, dimensioned by outcome (succeeded | failed). */
-export function recordCrawlSource(outcome: 'succeeded' | 'failed'): void {
-  counter('crawl.sources', 1, { outcome });
+export function recordCrawlSource(outcome: "succeeded" | "failed"): void {
+  counter("crawl.sources", 1, { outcome });
 }
 
 /** A crawl failure for one source — backs the CrawlFailureSpike alert. */
 export function recordCrawlFailure(sourceId: string): void {
-  counter('crawl.failures', 1, { sourceId });
+  counter("crawl.failures", 1, { sourceId });
 }
 
 /** Chunks produced + embedded in a pipeline pass. */
 export function recordChunksProcessed(count: number): void {
-  counter('chunks.processed', count);
+  counter("chunks.processed", count);
 }
 
 /** Diffs evaluated against the vector store in a pipeline pass. */
 export function recordDiffsProcessed(count: number): void {
-  counter('diffs.processed', count);
+  counter("diffs.processed", count);
 }
 
 /** The change score of one non-baseline diff (0–1), as a distribution. */
 export function recordChangeScore(score: number): void {
   distribution(
-    'change_score',
+    "change_score",
     score,
     undefined,
     [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
@@ -91,20 +91,20 @@ export function recordChangeScore(score: number): void {
 
 /** Alerts dispatched to Slack. */
 export function recordAlertFired(count = 1): void {
-  counter('alerts.fired', count);
+  counter("alerts.fired", count);
 }
 
 /** A failed Slack alert send — backs the AlertSendFailure alert. */
 export function recordAlertSendFailure(sourceId: string): void {
-  counter('alert.send_failures', 1, { sourceId });
+  counter("alert.send_failures", 1, { sourceId });
 }
 
 /** A pgvector store error — backs the PgVectorUnreachable alert. */
 export function recordPgVectorError(): void {
-  counter('pgvector.errors');
+  counter("pgvector.errors");
 }
 
-export type TokenKind = 'input' | 'output' | 'cache_read' | 'cache_write';
+export type TokenKind = "input" | "output" | "cache_read" | "cache_write";
 
 /**
  * Bedrock token usage. Each kind is its own metric name
@@ -121,5 +121,5 @@ export function recordBedrockTokens(kind: TokenKind, count: number): void {
  * by `target`; breakers call this on every trip/recovery.
  */
 export function setCircuitBreakerOpen(name: string, open: boolean): void {
-  metrics.setObservable('circuit_breaker.open', open ? 1 : 0, { target: name });
+  metrics.setObservable("circuit_breaker.open", open ? 1 : 0, { target: name });
 }

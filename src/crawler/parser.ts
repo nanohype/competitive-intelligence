@@ -1,5 +1,5 @@
-import * as cheerio from 'cheerio';
-import type { Source } from './sources.js';
+import * as cheerio from "cheerio";
+import type { Source } from "./sources.js";
 
 export interface ParsedContent {
   sourceId: string;
@@ -20,7 +20,7 @@ export function parseHtml(html: string, source: Source, fetchedAt: Date): Parsed
   const $ = cheerio.load(html);
 
   // Remove noise elements universally
-  $('script, style, noscript, iframe, svg, img, video, audio').remove();
+  $("script, style, noscript, iframe, svg, img, video, audio").remove();
 
   // Remove source-specific exclusions
   if (source.selectors?.exclude) {
@@ -30,25 +30,25 @@ export function parseHtml(html: string, source: Source, fetchedAt: Date): Parsed
   }
 
   // Select content scope
-  const scope = source.selectors?.content ? $(source.selectors.content) : $('body');
+  const scope = source.selectors?.content ? $(source.selectors.content) : $("body");
 
-  const title = $('title').text().trim() || $('h1').first().text().trim();
+  const title = $("title").text().trim() || $("h1").first().text().trim();
 
   // Extract text, collapsing whitespace
-  const text = scope.text().replace(/\s+/g, ' ').trim();
+  const text = scope.text().replace(/\s+/g, " ").trim();
 
   // Extract links for potential follow-up crawling
   const links: string[] = [];
-  scope.find('a[href]').each((_, el) => {
-    const href = $(el).attr('href');
-    if (!href || href.startsWith('#')) return;
+  scope.find("a[href]").each((_, el) => {
+    const href = $(el).attr("href");
+    if (!href || href.startsWith("#")) return;
     try {
       const resolved = new URL(href, source.url);
       // Allowlist safe schemes on the RESOLVED url. Blocklisting `javascript:`
       // alone is incomplete — `data:`, `vbscript:`, mixed-case (`JavaScript:`),
       // and whitespace-padded variants all slip a substring check; resolving
       // first and gating on the normalized protocol closes all of them.
-      if (resolved.protocol === 'http:' || resolved.protocol === 'https:') {
+      if (resolved.protocol === "http:" || resolved.protocol === "https:") {
         links.push(resolved.toString());
       }
     } catch {

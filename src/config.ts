@@ -1,28 +1,28 @@
-import { z } from 'zod';
-import 'dotenv/config';
+import { z } from "zod";
+import "dotenv/config";
 
-const logLevelSchema = z.enum(['debug', 'info', 'warn', 'error']).default('info');
+const logLevelSchema = z.enum(["debug", "info", "warn", "error"]).default("info");
 
 const schema = z
   .object({
-    llmProvider: z.enum(['bedrock', 'anthropic', 'openai']).default('bedrock'),
-    embeddingProvider: z.enum(['bedrock', 'openai']).default('bedrock'),
+    llmProvider: z.enum(["bedrock", "anthropic", "openai"]).default("bedrock"),
+    embeddingProvider: z.enum(["bedrock", "openai"]).default("bedrock"),
     anthropicApiKey: z.string().optional(),
     openaiApiKey: z.string().optional(),
 
-    awsRegion: z.string().default('us-east-1'),
-    bedrockLlmModel: z.string().default('us.anthropic.claude-sonnet-4-20250514-v1:0'),
-    bedrockEmbeddingModel: z.string().default('amazon.titan-embed-text-v2:0'),
+    awsRegion: z.string().default("us-east-1"),
+    bedrockLlmModel: z.string().default("us.anthropic.claude-sonnet-4-20250514-v1:0"),
+    bedrockEmbeddingModel: z.string().default("amazon.titan-embed-text-v2:0"),
 
     // Direct-API model IDs for the non-Bedrock providers (injectable, not
     // hardcoded). Anthropic-direct uses the bare current Sonnet alias.
-    anthropicLlmModel: z.string().default('claude-sonnet-4-6'),
-    openaiLlmModel: z.string().default('gpt-4o'),
+    anthropicLlmModel: z.string().default("claude-sonnet-4-6"),
+    openaiLlmModel: z.string().default("gpt-4o"),
 
-    embeddingModel: z.string().default('text-embedding-3-small'),
+    embeddingModel: z.string().default("text-embedding-3-small"),
     embeddingDimensions: z.number().default(1024),
 
-    vectorProvider: z.enum(['memory', 'pgvector']).default('memory'),
+    vectorProvider: z.enum(["memory", "pgvector"]).default("memory"),
     databaseUrl: z.string().optional(),
     // Path to a mounted CA bundle (e.g. the Amazon RDS global CA) for verifying
     // the pgvector TLS connection. Unset → Node's built-in trust store.
@@ -30,12 +30,12 @@ const schema = z
 
     crawlIntervalMinutes: z.number().default(60),
     crawlTimeoutMs: z.number().default(30_000),
-    userAgent: z.string().default('competitive-intelligence/0.1.0'),
+    userAgent: z.string().default("competitive-intelligence/0.1.0"),
 
     // Outbound alert sink — posts the radar's Block Kit alerts to Slack via
     // @slack/web-api. Absent → alerts log only (CLI / local dev).
     slackBotToken: z.string().optional(),
-    slackAlertChannel: z.string().default('#competitive-intel'),
+    slackAlertChannel: z.string().default("#competitive-intel"),
 
     significanceThreshold: z.number().min(0).max(1).default(0.3),
 
@@ -50,7 +50,7 @@ const schema = z
     // token (RFC 9728 / RFC 8707), so it can be added as a Claude custom
     // connector over a public tunnel. The authorization server is WorkOS,
     // configured in their dashboard — this app is only the resource server.
-    mcpAuth: z.enum(['none', 'workos']).default('none'),
+    mcpAuth: z.enum(["none", "workos"]).default("none"),
     // WorkOS AuthKit issuer, e.g. https://your-app.authkit.app — both the `iss`
     // the token must carry and the base its JWKS is fetched from.
     workosAuthkitIssuer: z.string().url().optional(),
@@ -60,49 +60,49 @@ const schema = z
     // Optional space/comma-delimited scopes every request must present.
     mcpAuthScopes: z.string().optional(),
 
-    nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
+    nodeEnv: z.enum(["development", "production", "test"]).default("development"),
     logLevel: logLevelSchema,
   })
   .superRefine((data, ctx) => {
     // Direct API providers require their keys
-    if (data.llmProvider === 'anthropic' && !data.anthropicApiKey) {
+    if (data.llmProvider === "anthropic" && !data.anthropicApiKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic',
-        path: ['anthropicApiKey'],
+        message: "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic",
+        path: ["anthropicApiKey"],
       });
     }
-    if (data.llmProvider === 'openai' && !data.openaiApiKey) {
+    if (data.llmProvider === "openai" && !data.openaiApiKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'OPENAI_API_KEY is required when LLM_PROVIDER=openai',
-        path: ['openaiApiKey'],
+        message: "OPENAI_API_KEY is required when LLM_PROVIDER=openai",
+        path: ["openaiApiKey"],
       });
     }
-    if (data.embeddingProvider === 'openai' && !data.openaiApiKey) {
+    if (data.embeddingProvider === "openai" && !data.openaiApiKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai',
-        path: ['openaiApiKey'],
+        message: "OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai",
+        path: ["openaiApiKey"],
       });
     }
     // Bedrock uses AWS credential chain — no key validation needed
 
     // WorkOS resource-server protection needs both the issuer (to verify the
     // token) and this server's canonical URI (the audience it must be bound to).
-    if (data.mcpAuth === 'workos') {
+    if (data.mcpAuth === "workos") {
       if (!data.workosAuthkitIssuer) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'WORKOS_AUTHKIT_ISSUER is required when MCP_AUTH=workos',
-          path: ['workosAuthkitIssuer'],
+          message: "WORKOS_AUTHKIT_ISSUER is required when MCP_AUTH=workos",
+          path: ["workosAuthkitIssuer"],
         });
       }
       if (!data.mcpPublicUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'MCP_PUBLIC_URL is required when MCP_AUTH=workos (the token audience)',
-          path: ['mcpPublicUrl'],
+          message: "MCP_PUBLIC_URL is required when MCP_AUTH=workos (the token audience)",
+          path: ["mcpPublicUrl"],
         });
       }
     }

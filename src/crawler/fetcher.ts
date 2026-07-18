@@ -1,6 +1,6 @@
-import { createBreaker, type CircuitBreaker } from '../resilience/circuit-breaker.js';
-import { logger } from '../logger.js';
-import { guardUrl } from './url-guard.js';
+import { logger } from "../logger.js";
+import { type CircuitBreaker, createBreaker } from "../resilience/circuit-breaker.js";
+import { guardUrl } from "./url-guard.js";
 
 export interface FetchResult {
   url: string;
@@ -64,14 +64,14 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
       // chain and the breaker is keyed on the original host.
       let current = url;
       for (let hop = 0; ; hop++) {
-        logger.debug('fetching', { url: current });
+        logger.debug("fetching", { url: current });
 
         const response = await fetch(current, {
           signal: controller.signal,
-          redirect: 'manual',
+          redirect: "manual",
           headers: {
-            'User-Agent': options.userAgent,
-            Accept: 'text/html,application/xhtml+xml',
+            "User-Agent": options.userAgent,
+            Accept: "text/html,application/xhtml+xml",
           },
         });
 
@@ -79,7 +79,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
           if (hop >= maxRedirects) {
             throw new Error(`too many redirects (>${maxRedirects}) starting at ${url}`);
           }
-          const location = response.headers.get('location');
+          const location = response.headers.get("location");
           if (!location) {
             throw new Error(`HTTP ${response.status} from ${current} with no Location header`);
           }
@@ -88,7 +88,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
           // following safe. A redirect to a blocked address throws here.
           const next = new URL(location, current).toString();
           await guardUrl(next);
-          logger.debug('redirect', { from: current, to: next, status: response.status });
+          logger.debug("redirect", { from: current, to: next, status: response.status });
           current = next;
           continue;
         }
@@ -96,7 +96,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
           throw new Error(`HTTP ${response.status} for ${current}`);
         }
 
-        const contentLength = response.headers.get('content-length');
+        const contentLength = response.headers.get("content-length");
         if (contentLength && Number(contentLength) > maxBytes) {
           throw new Error(`response too large: ${contentLength} bytes (max ${maxBytes})`);
         }
@@ -109,7 +109,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
 
         // `url` is the FINAL location after redirects, so downstream metadata
         // records where the content actually came from.
-        logger.info('fetched', { url: current, status: response.status, bytes: html.length });
+        logger.info("fetched", { url: current, status: response.status, bytes: html.length });
 
         return {
           url: current,
@@ -126,7 +126,7 @@ export async function fetchPage(url: string, options: FetchOptions): Promise<Fet
 }
 
 async function readBodyCapped(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return '';
+  if (!response.body) return "";
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -143,5 +143,5 @@ async function readBodyCapped(response: Response, maxBytes: number): Promise<str
   } finally {
     reader.releaseLock();
   }
-  return new TextDecoder('utf-8').decode(Buffer.concat(chunks));
+  return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
 }

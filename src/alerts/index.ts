@@ -1,10 +1,10 @@
-import type { DiffResult } from '../pipeline/differ.js';
-import type { LlmProvider } from '../providers/llm.js';
-import type { Config } from '../config.js';
-import { analyzeChanges, type ChangeAnalysis } from '../intel/analysis.js';
-import { formatAlert, type SlackBlocks } from './formatter.js';
-import { logger, toMessage } from '../logger.js';
-import { recordAlertSendFailure, recordAlertFired } from '../metrics.js';
+import type { Config } from "../config.js";
+import { analyzeChanges, type ChangeAnalysis } from "../intel/analysis.js";
+import { logger, toMessage } from "../logger.js";
+import { recordAlertFired, recordAlertSendFailure } from "../metrics.js";
+import type { DiffResult } from "../pipeline/differ.js";
+import type { LlmProvider } from "../providers/llm.js";
+import { formatAlert, type SlackBlocks } from "./formatter.js";
 
 export interface AlertSink {
   send(channel: string, message: SlackBlocks): Promise<void>;
@@ -25,7 +25,7 @@ export function createAlertEngine(llm: LlmProvider, sink: AlertSink, config: Con
       for (const diff of diffs) {
         // Skip sources with no meaningful change
         if (diff.changeScore < config.significanceThreshold) {
-          logger.debug('below threshold, skipping', {
+          logger.debug("below threshold, skipping", {
             sourceId: diff.sourceId,
             changeScore: diff.changeScore,
             threshold: config.significanceThreshold,
@@ -44,14 +44,14 @@ export function createAlertEngine(llm: LlmProvider, sink: AlertSink, config: Con
         try {
           await sink.send(config.slackAlertChannel, message);
           recordAlertFired();
-          logger.info('alert sent', {
+          logger.info("alert sent", {
             sourceId: analysis.sourceId,
             significance: analysis.significance,
             channel: config.slackAlertChannel,
           });
         } catch (err) {
           recordAlertSendFailure(analysis.sourceId);
-          logger.error('alert send failed', {
+          logger.error("alert send failed", {
             sourceId: analysis.sourceId,
             error: toMessage(err),
           });

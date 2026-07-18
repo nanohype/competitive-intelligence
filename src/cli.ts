@@ -1,14 +1,14 @@
-import { loadConfig } from './config.js';
-import { logger, setLogLevel, toMessage } from './logger.js';
-import { bootstrapLlm } from './providers/llm.js';
-import { bootstrapEmbeddings } from './providers/embeddings.js';
-import { bootstrapVectorStore } from './providers/vectors.js';
-import { loadSourcesFromFile } from './crawler/sources.js';
-import { crawlAll } from './crawler/index.js';
-import { ingestAndDiff } from './pipeline/index.js';
-import { createIntelEngine } from './intel/index.js';
-import { createAlertEngine } from './alerts/index.js';
-import * as ui from './display.js';
+import { createAlertEngine } from "./alerts/index.js";
+import { loadConfig } from "./config.js";
+import { crawlAll } from "./crawler/index.js";
+import { loadSourcesFromFile } from "./crawler/sources.js";
+import * as ui from "./display.js";
+import { createIntelEngine } from "./intel/index.js";
+import { logger, setLogLevel, toMessage } from "./logger.js";
+import { ingestAndDiff } from "./pipeline/index.js";
+import { bootstrapEmbeddings } from "./providers/embeddings.js";
+import { bootstrapLlm } from "./providers/llm.js";
+import { bootstrapVectorStore } from "./providers/vectors.js";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -17,11 +17,11 @@ async function main(): Promise<void> {
   setLogLevel(config.logLevel);
 
   switch (command) {
-    case 'crawl': {
-      const sources = loadSourcesFromFile('sources.json');
+    case "crawl": {
+      const sources = loadSourcesFromFile("sources.json");
 
       if (sources.length === 0) {
-        console.error('No sources configured. Create a sources.json file.');
+        console.error("No sources configured. Create a sources.json file.");
         process.exit(1);
       }
 
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
       if (crawlResult.succeeded.length === 0) {
         ui.failuresDetail(crawlResult.failed);
-        console.error('\n  All crawls failed. Nothing to process.\n');
+        console.error("\n  All crawls failed. Nothing to process.\n");
         process.exit(1);
       }
 
@@ -69,10 +69,10 @@ async function main(): Promise<void> {
       break;
     }
 
-    case 'query': {
-      const question = args.join(' ');
+    case "query": {
+      const question = args.join(" ");
       if (!question) {
-        console.error('Usage: npm run query -- <question>');
+        console.error("Usage: npm run query -- <question>");
         process.exit(1);
       }
 
@@ -91,11 +91,11 @@ async function main(): Promise<void> {
 
     default: {
       ui.header();
-      console.log(`  ${'\x1b[1m'}Commands:${'\x1b[0m'}`);
+      console.log(`  ${"\x1b[1m"}Commands:${"\x1b[0m"}`);
       console.log(`    crawl              Crawl all sources, detect changes`);
       console.log(`    query <question>   Query the intelligence knowledge base`);
       console.log();
-      console.log(`  ${'\x1b[1m'}Examples:${'\x1b[0m'}`);
+      console.log(`  ${"\x1b[1m"}Examples:${"\x1b[0m"}`);
       console.log(`    npm run crawl`);
       console.log(`    npm run query -- "What has AWS shipped recently?"`);
       console.log(`    npm run query -- "Are any competitors hiring ML engineers?"`);
@@ -105,6 +105,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error('cli error', { error: toMessage(err) });
+  logger.error("cli error", { error: toMessage(err) });
   process.exit(1);
 });

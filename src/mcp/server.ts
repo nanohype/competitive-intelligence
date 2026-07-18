@@ -1,12 +1,12 @@
-import http from 'node:http';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { registerTools, type McpToolDeps } from './tools.js';
-import type { OAuthProtection } from './oauth.js';
-import { logger, toMessage } from '../logger.js';
+import http from "node:http";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { logger, toMessage } from "../logger.js";
+import type { OAuthProtection } from "./oauth.js";
+import { type McpToolDeps, registerTools } from "./tools.js";
 
 /** The path the streamable-HTTP transport is served on. */
-export const MCP_PATH = '/mcp';
+export const MCP_PATH = "/mcp";
 
 /**
  * Construct the MCP server for one connection. Tools are stateless functions
@@ -16,7 +16,7 @@ export const MCP_PATH = '/mcp';
  */
 export function createMcpServer(deps: McpToolDeps): Server {
   const server = new Server(
-    { name: 'competitive-intelligence', version: '0.1.0' },
+    { name: "competitive-intelligence", version: "0.1.0" },
     { capabilities: { tools: {} } },
   );
   registerTools(server, deps);
@@ -60,21 +60,21 @@ async function handleRequest(
   deps: McpToolDeps,
   oauth?: OAuthProtection,
 ): Promise<void> {
-  const url = req.url ?? '';
-  const pathname = url.split('?', 1)[0];
+  const url = req.url ?? "";
+  const pathname = url.split("?", 1)[0];
 
   // Protected Resource Metadata (RFC 9728) — always unauthenticated, so a client
   // can discover the authorization server before it holds a token. Only mounted
   // when OAuth is enabled.
   if (oauth?.isMetadataRequest(pathname)) {
-    res.writeHead(200, { 'content-type': 'application/json' });
+    res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(oauth.metadata));
     return;
   }
 
   if (!url.startsWith(MCP_PATH)) {
-    res.writeHead(404, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ status: 'not_found' }));
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "not_found" }));
     return;
   }
 
@@ -83,8 +83,8 @@ async function handleRequest(
     const decision = await oauth.authorize(req.headers.authorization);
     if (!decision.ok) {
       res.writeHead(decision.status, {
-        'content-type': 'application/json',
-        'www-authenticate': decision.wwwAuthenticate,
+        "content-type": "application/json",
+        "www-authenticate": decision.wwwAuthenticate,
       });
       res.end(JSON.stringify(decision.body));
       return;
@@ -99,23 +99,23 @@ async function handleRequest(
     enableJsonResponse: true,
   });
 
-  res.on('close', () => {
+  res.on("close", () => {
     void transport.close();
     void server.close();
   });
 
   try {
     await server.connect(transport);
-    const body = req.method === 'POST' ? await readJsonBody(req) : undefined;
+    const body = req.method === "POST" ? await readJsonBody(req) : undefined;
     await transport.handleRequest(req, res, body);
   } catch (err) {
-    logger.error('mcp request failed', { error: toMessage(err) });
+    logger.error("mcp request failed", { error: toMessage(err) });
     if (!res.headersSent) {
-      res.writeHead(500, { 'content-type': 'application/json' });
+      res.writeHead(500, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal server error' },
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
           id: null,
         }),
       );
@@ -129,7 +129,7 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     chunks.push(chunk as Buffer);
   }
-  const raw = Buffer.concat(chunks).toString('utf-8');
+  const raw = Buffer.concat(chunks).toString("utf-8");
   if (!raw) return undefined;
   return JSON.parse(raw);
 }

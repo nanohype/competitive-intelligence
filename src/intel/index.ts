@@ -1,7 +1,7 @@
-import type { EmbeddingProvider } from '../providers/embeddings.js';
-import type { VectorStore, SearchResult } from '../providers/vectors.js';
-import type { LlmProvider } from '../providers/llm.js';
-import { answerQuery } from './analysis.js';
+import type { EmbeddingProvider } from "../providers/embeddings.js";
+import type { LlmProvider } from "../providers/llm.js";
+import type { SearchResult, VectorStore } from "../providers/vectors.js";
+import { answerQuery } from "./analysis.js";
 
 export interface QueryOptions {
   competitor?: string;
@@ -55,7 +55,7 @@ export function createIntelEngine(
       const results = await retrieve(question, options);
 
       if (results.length === 0) {
-        return 'No intelligence found for this query. The knowledge base may be empty — try running a crawl first.';
+        return "No intelligence found for this query. The knowledge base may be empty — try running a crawl first.";
       }
 
       return answerQuery(question, results, llm);

@@ -6,7 +6,7 @@
  * logger; this file keeps the app's message-first call shape
  * (`logger.info('crawl done', { sourceId })`) over it.
  */
-import { createLogger, errorMessage, type LogLevel } from './vendor/runtime/logger.js';
+import { createLogger, errorMessage, type LogLevel } from "./vendor/runtime/logger.js";
 
 export type { LogLevel };
 

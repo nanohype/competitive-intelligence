@@ -1,6 +1,7 @@
 {
   "entries": [
     { "src": "library/scripts/sync-vendored.mjs", "dest": "scripts/sync-vendored.mjs" },
+    { "src": "library/config/biome.base.json", "dest": "biome.base.json" },
     {
       "src": "library/runtime/src/circuit-breaker.ts",
       "dest": "src/vendor/runtime/circuit-breaker.ts"

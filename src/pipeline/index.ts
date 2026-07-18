@@ -1,10 +1,10 @@
-import type { ParsedContent } from '../crawler/parser.js';
-import type { EmbeddingProvider } from '../providers/embeddings.js';
-import type { VectorStore, VectorDocument } from '../providers/vectors.js';
-import { chunkText } from './chunker.js';
-import { semanticDiff, type DiffResult } from './differ.js';
-import { logger } from '../logger.js';
-import { recordChunksProcessed, recordChangeScore, recordDiffsProcessed } from '../metrics.js';
+import type { ParsedContent } from "../crawler/parser.js";
+import { logger } from "../logger.js";
+import { recordChangeScore, recordChunksProcessed, recordDiffsProcessed } from "../metrics.js";
+import type { EmbeddingProvider } from "../providers/embeddings.js";
+import type { VectorDocument, VectorStore } from "../providers/vectors.js";
+import { chunkText } from "./chunker.js";
+import { type DiffResult, semanticDiff } from "./differ.js";
 
 export interface PipelineResult {
   diffs: DiffResult[];
@@ -37,7 +37,7 @@ export async function ingestAndDiff(
 
   for (const page of pages) {
     if (!page.text || page.text.length < 50) {
-      logger.debug('skipping empty page', { sourceId: page.sourceId });
+      logger.debug("skipping empty page", { sourceId: page.sourceId });
       continue;
     }
 
@@ -65,7 +65,7 @@ export async function ingestAndDiff(
     const existing = await store.count({ sourceId: page.sourceId });
     let diff: DiffResult;
     if (existing === 0) {
-      logger.info('baseline seed (cold start)', {
+      logger.info("baseline seed (cold start)", {
         sourceId: page.sourceId,
         chunks: chunks.length,
       });
@@ -108,7 +108,7 @@ export async function ingestAndDiff(
   }
 
   recordDiffsProcessed(diffs.length);
-  logger.info('pipeline complete', {
+  logger.info("pipeline complete", {
     pages: pages.length,
     diffs: diffs.length,
     totalChunksStored,
