@@ -34,7 +34,7 @@ export function chunkText(
     ];
   }
 
-  const separators = ['\n\n', '\n', '. ', ' '];
+  const separators = ["\n\n", "\n", ". ", " "];
   const segments = recursiveSplit(text, separators, maxSize);
 
   // Apply overlap window
@@ -81,7 +81,7 @@ function recursiveSplit(text: string, separators: string[], maxSize: number): st
   const parts = text.split(sep);
 
   const merged: string[] = [];
-  let current = '';
+  let current = "";
 
   for (const part of parts) {
     const candidate = current ? current + sep + part : part;
@@ -92,7 +92,7 @@ function recursiveSplit(text: string, separators: string[], maxSize: number): st
       // If a single part exceeds maxSize, split it further
       if (part.length > maxSize) {
         merged.push(...recursiveSplit(part, remaining, maxSize));
-        current = '';
+        current = "";
       } else {
         current = part;
       }

@@ -48,9 +48,9 @@ npm start            # Run compiled output
 npm run crawl        # One-off crawl via CLI
 npm run query -- "question"  # One-off query via CLI
 npm test             # vitest run
-npm run lint         # ESLint
+npm run lint         # Biome
 npm run typecheck    # tsc --noEmit
-npm run format:check # prettier --check
+npm run format:check # Biome
 npm run sync:vendored # re-sync vendored copies (runtime, config, chart base) from ../nanohype (":check" = drift gate)
 ```
 

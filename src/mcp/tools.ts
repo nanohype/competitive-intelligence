@@ -1,9 +1,9 @@
-import { z } from 'zod';
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { IntelEngine } from '../intel/index.js';
-import type { Source } from '../crawler/sources.js';
-import type { SearchResult } from '../providers/vectors.js';
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import type { Source } from "../crawler/sources.js";
+import type { IntelEngine } from "../intel/index.js";
+import type { SearchResult } from "../providers/vectors.js";
 
 /**
  * The pull surface: the four tools the MCP server advertises. The consuming
@@ -14,7 +14,7 @@ import type { SearchResult } from '../providers/vectors.js';
 export interface McpToolDeps {
   intel: IntelEngine;
   /** The single-writer crawl trigger — the in-process mutex'd `runCrawl`. */
-  runCrawl: () => Promise<'ran' | 'skipped'>;
+  runCrawl: () => Promise<"ran" | "skipped">;
   /** The Zod-validated source set loaded from `sources.json`. */
   sources: Source[];
 }
@@ -32,45 +32,45 @@ interface ToolDescriptor {
 export function listTools(): ToolDescriptor[] {
   return [
     {
-      name: 'search_intel',
+      name: "search_intel",
       description:
-        'Search accumulated competitive intelligence and return the ranked context (matching chunks + their source metadata) for a natural-language question. Returns retrieved evidence to reason over, not a composed answer. Optionally scope to one competitor and cap the number of chunks.',
+        "Search accumulated competitive intelligence and return the ranked context (matching chunks + their source metadata) for a natural-language question. Returns retrieved evidence to reason over, not a composed answer. Optionally scope to one competitor and cap the number of chunks.",
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
           question: {
-            type: 'string',
-            description: 'The natural-language question about competitors.',
+            type: "string",
+            description: "The natural-language question about competitors.",
           },
           competitor: {
-            type: 'string',
+            type: "string",
             description:
-              'Optional competitor name to scope the search to (matches the source `competitor` field).',
+              "Optional competitor name to scope the search to (matches the source `competitor` field).",
           },
           topK: {
-            type: 'number',
-            description: 'Optional maximum number of chunks to return (1–50, default 10).',
+            type: "number",
+            description: "Optional maximum number of chunks to return (1–50, default 10).",
           },
         },
-        required: ['question'],
+        required: ["question"],
       },
     },
     {
-      name: 'trigger_crawl',
+      name: "trigger_crawl",
       description:
-        'Trigger an immediate crawl of all configured sources through the single-writer crawl mutex. Returns whether the crawl ran or was skipped (another crawl already in progress, or no sources configured).',
-      inputSchema: { type: 'object', properties: {} },
+        "Trigger an immediate crawl of all configured sources through the single-writer crawl mutex. Returns whether the crawl ran or was skipped (another crawl already in progress, or no sources configured).",
+      inputSchema: { type: "object", properties: {} },
     },
     {
-      name: 'status',
-      description: 'Report process health: uptime, resident heap usage, and the Node.js version.',
-      inputSchema: { type: 'object', properties: {} },
+      name: "status",
+      description: "Report process health: uptime, resident heap usage, and the Node.js version.",
+      inputSchema: { type: "object", properties: {} },
     },
     {
-      name: 'list_sources',
+      name: "list_sources",
       description:
-        'List the configured crawl sources (id, competitor, url, type) from the Zod-validated source set.',
-      inputSchema: { type: 'object', properties: {} },
+        "List the configured crawl sources (id, competitor, url, type) from the Zod-validated source set.",
+      inputSchema: { type: "object", properties: {} },
     },
   ];
 }
@@ -83,7 +83,7 @@ export function listTools(): ToolDescriptor[] {
 // the message intact so the calling model can self-correct.
 
 const searchIntelArgs = z.object({
-  question: z.string().min(1, 'question must be a non-empty string'),
+  question: z.string().min(1, "question must be a non-empty string"),
   competitor: z.string().min(1).optional(),
   topK: z.number().int().min(1).max(50).optional(),
 });
@@ -96,7 +96,7 @@ const noArgs = z.object({}).strip();
  * assignable to the SDK's `ServerResult` union.
  */
 export type ToolResult = {
-  content: { type: 'text'; text: string }[];
+  content: { type: "text"; text: string }[];
   isError?: true;
 };
 
@@ -108,7 +108,7 @@ export type ToolResult = {
 class UnknownToolError extends Error {}
 
 function json(value: unknown): ToolResult {
-  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
 
 /** Shape one search hit into the context payload returned to the caller. */
@@ -144,11 +144,11 @@ export async function callTool(
     if (err instanceof UnknownToolError) throw err;
     const message =
       err instanceof z.ZodError
-        ? err.issues.map((i) => i.message).join('; ')
+        ? err.issues.map((i) => i.message).join("; ")
         : err instanceof Error
           ? err.message
           : String(err);
-    return { isError: true, content: [{ type: 'text', text: message }] };
+    return { isError: true, content: [{ type: "text", text: message }] };
   }
 }
 
@@ -158,7 +158,7 @@ async function dispatchTool(
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
   switch (name) {
-    case 'search_intel': {
+    case "search_intel": {
       const { question, competitor, topK } = searchIntelArgs.parse(args);
       const results = await deps.intel.retrieve(question, { competitor, topK });
       return json({
@@ -167,12 +167,12 @@ async function dispatchTool(
         results: results.map(toContext),
       });
     }
-    case 'trigger_crawl': {
+    case "trigger_crawl": {
       noArgs.parse(args);
       const outcome = await deps.runCrawl();
       return json({ outcome });
     }
-    case 'status': {
+    case "status": {
       noArgs.parse(args);
       return json({
         uptimeSeconds: Math.round(process.uptime()),
@@ -180,7 +180,7 @@ async function dispatchTool(
         node: process.version,
       });
     }
-    case 'list_sources': {
+    case "list_sources": {
       noArgs.parse(args);
       return json(
         deps.sources.map((s) => ({

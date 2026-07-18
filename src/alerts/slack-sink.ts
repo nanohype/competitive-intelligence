@@ -1,8 +1,8 @@
-import { WebClient } from '@slack/web-api';
-import type { KnownBlock } from '@slack/types';
-import type { AlertSink } from './index.js';
-import type { SlackBlocks } from './formatter.js';
-import { createBreaker } from '../resilience/circuit-breaker.js';
+import type { KnownBlock } from "@slack/types";
+import { WebClient } from "@slack/web-api";
+import { createBreaker } from "../resilience/circuit-breaker.js";
+import type { SlackBlocks } from "./formatter.js";
+import type { AlertSink } from "./index.js";
 
 // Bound the Slack API call so a hung postMessage can't stall the crawl loop
 // (the sink is awaited inside the single-writer crawl mutex).
@@ -17,7 +17,7 @@ const SLACK_TIMEOUT_MS = 10_000;
  */
 export function createSlackSink(botToken: string): AlertSink {
   const client = new WebClient(botToken, { timeout: SLACK_TIMEOUT_MS });
-  const breaker = createBreaker('slack-alerts', { failureThreshold: 3 });
+  const breaker = createBreaker("slack-alerts", { failureThreshold: 3 });
 
   return {
     async send(channel: string, message: SlackBlocks) {

@@ -1,10 +1,10 @@
 import {
+  type CryptoKey,
   createRemoteJWKSet,
-  jwtVerify,
   type JWTPayload,
   type JWTVerifyGetKey,
-  type CryptoKey,
-} from 'jose';
+  jwtVerify,
+} from "jose";
 
 /** The key material `jose.jwtVerify` accepts — a public key, a shared secret, or a JWKS resolver. */
 type VerifyKey = CryptoKey | Uint8Array | JWTVerifyGetKey;
@@ -37,7 +37,7 @@ type VerifyKey = CryptoKey | Uint8Array | JWTVerifyGetKey;
  */
 
 /** The RFC 9728 well-known prefix all protected-resource metadata hangs under. */
-const WELL_KNOWN_PREFIX = '/.well-known/oauth-protected-resource';
+const WELL_KNOWN_PREFIX = "/.well-known/oauth-protected-resource";
 
 export interface OAuthConfig {
   /**
@@ -91,7 +91,7 @@ export function createWorkosVerifier(opts: {
     // Narrow the injected key: a JWKS resolver (function) vs. direct key material
     // — the two `jwtVerify` overloads each take one, and a union satisfies neither.
     const { payload } =
-      typeof keys === 'function'
+      typeof keys === "function"
         ? await jwtVerify(token, keys, verifyOptions)
         : await jwtVerify(token, keys, verifyOptions);
     return payload;
@@ -110,7 +110,7 @@ export function protectedResourceMetadata(config: OAuthConfig): ProtectedResourc
   const metadata: ProtectedResourceMetadata = {
     resource: config.resource,
     authorization_servers: [config.issuer],
-    bearer_methods_supported: ['header'],
+    bearer_methods_supported: ["header"],
   };
   if (config.requiredScopes && config.requiredScopes.length > 0) {
     metadata.scopes_supported = config.requiredScopes;
@@ -159,7 +159,7 @@ export function createOAuthProtection(
   // `<origin>/.well-known/oauth-protected-resource<path>`. Serve both that and
   // the bare well-known path so a client discovering either way succeeds.
   const specificPath =
-    pathname && pathname !== '/' ? `${WELL_KNOWN_PREFIX}${pathname}` : WELL_KNOWN_PREFIX;
+    pathname && pathname !== "/" ? `${WELL_KNOWN_PREFIX}${pathname}` : WELL_KNOWN_PREFIX;
   const metadataUrl = `${origin}${specificPath}`;
   const metadataPaths = new Set<string>([WELL_KNOWN_PREFIX, specificPath]);
   const requiredScopes = config.requiredScopes ?? [];
@@ -167,9 +167,9 @@ export function createOAuthProtection(
 
   const challenge = (params: Record<string, string>): string => {
     const parts = Object.entries({ ...params, resource_metadata: metadataUrl }).map(
-      ([k, v]) => `${k}="${v.replace(/"/g, '')}"`,
+      ([k, v]) => `${k}="${v.replace(/"/g, "")}"`,
     );
-    return `Bearer ${parts.join(', ')}`;
+    return `Bearer ${parts.join(", ")}`;
   };
 
   return {
@@ -184,19 +184,19 @@ export function createOAuthProtection(
           ok: false,
           status: 401,
           wwwAuthenticate: challenge({}),
-          body: { error: 'unauthorized', error_description: 'missing bearer token' },
+          body: { error: "unauthorized", error_description: "missing bearer token" },
         };
       }
 
       const match = /^Bearer (.+)$/.exec(authorizationHeader.trim());
-      if (!match || !match[1].trim()) {
+      if (!match?.[1].trim()) {
         // A present-but-unparseable Authorization header is a malformed request.
         return {
           ok: false,
           status: 400,
-          wwwAuthenticate: challenge({ error: 'invalid_request' }),
+          wwwAuthenticate: challenge({ error: "invalid_request" }),
           body: {
-            error: 'invalid_request',
+            error: "invalid_request",
             error_description: 'Authorization header must be "Bearer <token>"',
           },
         };
@@ -209,8 +209,8 @@ export function createOAuthProtection(
         return {
           ok: false,
           status: 401,
-          wwwAuthenticate: challenge({ error: 'invalid_token' }),
-          body: { error: 'invalid_token', error_description: describeVerifyError(err) },
+          wwwAuthenticate: challenge({ error: "invalid_token" }),
+          body: { error: "invalid_token", error_description: describeVerifyError(err) },
         };
       }
 
@@ -222,12 +222,12 @@ export function createOAuthProtection(
             ok: false,
             status: 403,
             wwwAuthenticate: challenge({
-              error: 'insufficient_scope',
-              scope: requiredScopes.join(' '),
+              error: "insufficient_scope",
+              scope: requiredScopes.join(" "),
             }),
             body: {
-              error: 'insufficient_scope',
-              error_description: `missing required scope(s): ${missing.join(', ')}`,
+              error: "insufficient_scope",
+              error_description: `missing required scope(s): ${missing.join(", ")}`,
             },
           };
         }
@@ -240,32 +240,32 @@ export function createOAuthProtection(
 
 /** Collect the scopes a token grants — OAuth `scope` (space-delimited) or `scp` (array). */
 function grantedScopes(claims: JWTPayload): Set<string> {
-  const raw = claims['scope'] ?? claims['scp'];
-  if (typeof raw === 'string') return new Set(raw.split(/\s+/).filter(Boolean));
-  if (Array.isArray(raw)) return new Set(raw.filter((s): s is string => typeof s === 'string'));
+  const raw = claims.scope ?? claims.scp;
+  if (typeof raw === "string") return new Set(raw.split(/\s+/).filter(Boolean));
+  if (Array.isArray(raw)) return new Set(raw.filter((s): s is string => typeof s === "string"));
   return new Set();
 }
 
 /** A short, non-leaky reason for a rejected token (audience/issuer/expiry/signature). */
 function describeVerifyError(err: unknown): string {
-  if (err && typeof err === 'object' && 'code' in err) {
+  if (err && typeof err === "object" && "code" in err) {
     const code = String((err as { code: unknown }).code);
     switch (code) {
-      case 'ERR_JWT_EXPIRED':
-        return 'token expired';
-      case 'ERR_JWT_CLAIM_VALIDATION_FAILED':
+      case "ERR_JWT_EXPIRED":
+        return "token expired";
+      case "ERR_JWT_CLAIM_VALIDATION_FAILED":
         // Wrong audience or issuer — RFC 8707 mismatch lands here.
-        return 'token claims invalid for this resource';
-      case 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED':
-      case 'ERR_JWKS_NO_MATCHING_KEY':
-        return 'token signature invalid';
+        return "token claims invalid for this resource";
+      case "ERR_JWS_SIGNATURE_VERIFICATION_FAILED":
+      case "ERR_JWKS_NO_MATCHING_KEY":
+        return "token signature invalid";
       default:
-        return 'token verification failed';
+        return "token verification failed";
     }
   }
-  return 'token verification failed';
+  return "token verification failed";
 }
 
 function trimSlash(url: string): string {
-  return url.replace(/\/+$/, '');
+  return url.replace(/\/+$/, "");
 }

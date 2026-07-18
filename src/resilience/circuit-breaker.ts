@@ -20,14 +20,14 @@
  * state transitions, so nothing here wraps exec/reset.
  */
 
-import { createCircuitBreaker, type CircuitBreaker } from '../vendor/runtime/circuit-breaker.js';
-import { setCircuitBreakerOpen } from '../metrics.js';
+import { setCircuitBreakerOpen } from "../metrics.js";
+import { type CircuitBreaker, createCircuitBreaker } from "../vendor/runtime/circuit-breaker.js";
 
 export {
-  CircuitOpenError,
   type CircuitBreaker,
+  CircuitOpenError,
   type CircuitState,
-} from '../vendor/runtime/circuit-breaker.js';
+} from "../vendor/runtime/circuit-breaker.js";
 
 export interface BreakerOptions {
   /** Failures within the window that trip the breaker. @default 5 */

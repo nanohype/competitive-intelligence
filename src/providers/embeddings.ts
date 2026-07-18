@@ -1,8 +1,8 @@
-import OpenAI from 'openai';
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { createRegistry } from '../vendor/runtime/registry.js';
-import type { Config } from '../config.js';
-import { createBreaker } from '../resilience/circuit-breaker.js';
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import OpenAI from "openai";
+import type { Config } from "../config.js";
+import { createBreaker } from "../resilience/circuit-breaker.js";
+import { createRegistry } from "../vendor/runtime/registry.js";
 
 // Hard deadlines for every embedding call — embeddings run sequentially on the
 // single-writer crawl path, so a hung call stalls the whole crawl. See llm.ts.
@@ -18,13 +18,13 @@ export interface EmbeddingProvider {
   dimensions: number;
 }
 
-export const embeddingRegistry = createRegistry<EmbeddingProvider>('embedding');
+export const embeddingRegistry = createRegistry<EmbeddingProvider>("embedding");
 
 // ─── Bedrock Titan (AWS credential chain) ───
 
 class BedrockEmbeddingProvider implements EmbeddingProvider {
   private client: BedrockRuntimeClient;
-  private breaker = createBreaker('bedrock-embeddings', { failureThreshold: 3 });
+  private breaker = createBreaker("bedrock-embeddings", { failureThreshold: 3 });
   private modelId: string;
   readonly dimensions: number;
 
@@ -49,8 +49,8 @@ class BedrockEmbeddingProvider implements EmbeddingProvider {
         const response = await this.client.send(
           new InvokeModelCommand({
             modelId: this.modelId,
-            contentType: 'application/json',
-            accept: 'application/json',
+            contentType: "application/json",
+            accept: "application/json",
             body: JSON.stringify({
               inputText: text,
               dimensions: this.dimensions,
@@ -72,7 +72,7 @@ class BedrockEmbeddingProvider implements EmbeddingProvider {
 
 class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private client: OpenAI;
-  private breaker = createBreaker('openai-embeddings', { failureThreshold: 3 });
+  private breaker = createBreaker("openai-embeddings", { failureThreshold: 3 });
   readonly dimensions: number;
   private model: string;
 
@@ -106,7 +106,7 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
 export function bootstrapEmbeddings(config: Config): EmbeddingProvider {
   embeddingRegistry.register(
-    'bedrock',
+    "bedrock",
     () =>
       new BedrockEmbeddingProvider(
         config.awsRegion,
@@ -116,7 +116,7 @@ export function bootstrapEmbeddings(config: Config): EmbeddingProvider {
   );
   if (config.openaiApiKey) {
     embeddingRegistry.register(
-      'openai',
+      "openai",
       () =>
         new OpenAIEmbeddingProvider(
           config.openaiApiKey!,

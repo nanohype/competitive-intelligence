@@ -1,21 +1,21 @@
-import { z } from 'zod';
-import type { LlmProvider } from '../providers/llm.js';
-import type { DiffResult } from '../pipeline/differ.js';
-import type { SearchResult } from '../providers/vectors.js';
+import { z } from "zod";
+import type { DiffResult } from "../pipeline/differ.js";
+import type { LlmProvider } from "../providers/llm.js";
+import type { SearchResult } from "../providers/vectors.js";
 
 export interface ChangeAnalysis {
   sourceId: string;
   competitor: string;
   summary: string;
-  significance: 'low' | 'medium' | 'high' | 'critical';
+  significance: "low" | "medium" | "high" | "critical";
   signals: string[];
 }
 
 // The model returns JSON — validate it at this trust boundary like every other
 // input (config, sources). Unknown shapes fall back to the raw-text branch.
 const analysisSchema = z.object({
-  summary: z.string().default('Analysis unavailable'),
-  significance: z.enum(['low', 'medium', 'high', 'critical']).catch('low'),
+  summary: z.string().default("Analysis unavailable"),
+  significance: z.enum(["low", "medium", "high", "critical"]).catch("low"),
   signals: z.array(z.string()).catch([]),
 });
 
@@ -41,7 +41,7 @@ export function stripCodeFences(text: string): string {
 }
 
 export async function analyzeChanges(diff: DiffResult, llm: LlmProvider): Promise<ChangeAnalysis> {
-  const newContent = diff.newChunks.map((c) => c.text).join('\n---\n');
+  const newContent = diff.newChunks.map((c) => c.text).join("\n---\n");
 
   const prompt = `Competitor: ${diff.competitor}
 Source: ${diff.sourceId}
@@ -68,7 +68,7 @@ ${newContent.slice(0, 8000)}`;
     sourceId: diff.sourceId,
     competitor: diff.competitor,
     summary: response.text.slice(0, 500),
-    significance: 'low',
+    significance: "low",
     signals: [],
   };
 }
@@ -99,7 +99,7 @@ export async function answerQuery(
       (r, i) =>
         `[${i + 1}] (${r.metadata.competitor} — ${r.metadata.type}, score: ${r.score.toFixed(2)})\n${r.content}`,
     )
-    .join('\n\n');
+    .join("\n\n");
 
   const prompt = `Question: ${question}
 
