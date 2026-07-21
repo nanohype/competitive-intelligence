@@ -1,13 +1,18 @@
-# Platform CR — declares competitive-intelligence as a tenant of the protohype
+# Platform CR — declares competitive-intelligence as a tenant of the strategy
 # team on the eks-agent-platform operator. Apply once per cluster before the
 # ApplicationSet entry starts reconciling the chart.
+#
+# Both CRs below live in `tenants-strategy`, the strategy team's control-plane
+# namespace. That is where the CRs are authored, not where the app runs — the
+# operator derives the workload namespace from `Platform.metadata.name`.
 #
 # Two CRs declared here:
 #   - BudgetPolicy (referenced by Platform.spec.budget — required)
 #   - Platform     (the actual tenant declaration)
 #
 # What the operator reconciles from the Platform CR:
-#   - Namespace `tenants-protohype` (Pod Security Standards baseline)
+#   - Namespace `tenants-competitive-intelligence` (Pod Security Standards
+#     baseline) — the workload namespace, named after this Platform
 #   - ResourceQuota + LimitRange
 #   - Default-deny NetworkPolicy (the chart layers app-specific rules on top)
 #   - ArgoCD AppProject scoped to this Platform
@@ -39,7 +44,7 @@ apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
   name: competitive-intelligence
-  namespace: tenants-protohype
+  namespace: tenants-strategy
 spec:
   platformRef:
     name: competitive-intelligence
@@ -55,12 +60,12 @@ apiVersion: platform.nanohype.dev/v1alpha1
 kind: Platform
 metadata:
   name: competitive-intelligence
-  namespace: tenants-protohype
+  namespace: tenants-strategy
 spec:
   displayName: competitive-intelligence
   # Competitive intel is a marketing/strategy function.
   persona: marketing
-  tenant: protohype
+  tenant: strategy
   budget:
     name: competitive-intelligence
   identity:

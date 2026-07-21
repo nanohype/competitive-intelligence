@@ -60,7 +60,7 @@ apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
   name: competitive-intelligence
-  namespace: tenants-protohype
+  namespace: tenants-strategy
 spec:
   platformRef: { name: competitive-intelligence }
   monthlyUsd: '2500' # kill-switch fires at 120%
@@ -71,11 +71,11 @@ apiVersion: platform.nanohype.dev/v1alpha1
 kind: Platform
 metadata:
   name: competitive-intelligence
-  namespace: tenants-protohype
+  namespace: tenants-strategy
 spec:
   displayName: competitive-intelligence
   persona: marketing
-  tenant: protohype
+  tenant: strategy
   budget: { name: competitive-intelligence }
   identity:
     allowedModelFamilies: [anthropic, amazon] # Claude (LLM) + Titan (embeddings)
@@ -84,7 +84,9 @@ spec:
   isolation: namespace
 ```
 
-The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, and ArgoCD AppProject. **The app pods assume the landing-zone `competitive-intelligence-platform` IAM role directly** via an EKS Pod Identity association (the chart's ServiceAccount, name pinned to the app, carries no role-arn annotation) — that's why `extraPolicyArns` stays empty. The tenant boundary (`tenant: protohype`, namespace `tenants-protohype`, project `tenant-protohype`) does not change with the repo name.
+Both CRs are authored in `tenants-strategy`, the strategy team's control-plane namespace. From `Platform.metadata.name` the operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, LimitRange, default-deny NetworkPolicy, and the ArgoCD AppProject `competitive-intelligence`. **The app pods assume the landing-zone `competitive-intelligence-platform` IAM role directly** via an EKS Pod Identity association (the chart's ServiceAccount, name pinned to the app, carries no role-arn annotation) — that's why `extraPolicyArns` stays empty.
+
+Two tokens, two scopes: `spec.tenant` is the owning team (`strategy`) and drives labels, tags, and OTel attributes; `metadata.name` is the app (`competitive-intelligence`) and drives the workload namespace, the AppProject, and the tenant IAM role name.
 
 ### The Helm chart (`chart/`)
 
@@ -100,7 +102,7 @@ The application Deployment plus everything that supports it. Templates under `ch
 | `prometheusrule.yaml`    | Alerts — crawl failures, circuit-breaker open, alert-send failures, pgvector unreachable                                                                                                                                            |
 | `grafana-dashboard.yaml` | ConfigMap loading `chart/dashboards/competitive-intelligence.json`                                                                                                                                                                  |
 
-`values.yaml` is the base; `values-development.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no public ingress**: the MCP surface is reached only through the mcp-tunnel (outbound-only `cloudflared`), which the NetworkPolicy admits from the `mcp-tunnel` namespace alone; the only other inbound is same-namespace health probes. Wiring the tunnel addon + the per-tenant route is `eks-gitops` + operator work — this repo just ships a tunnel-ready Service locked by NetworkPolicy.
+`values.yaml` is the base; `values-development.yaml` / `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tag, `tenantInfra.*` PG host/port/db). The image is `ghcr.io/nanohype/competitive-intelligence`. OTel attrs `agents.tenant=strategy` + `agents.platform=competitive-intelligence` are set in every values file (required by the platform-tenant contract). There's **no public ingress**: the MCP surface is reached only through the mcp-tunnel (outbound-only `cloudflared`), which the NetworkPolicy admits from the `mcp-tunnel` namespace alone; the only other inbound is same-namespace health probes. Wiring the tunnel addon + the per-tenant route is `eks-gitops` + operator work — this repo just ships a tunnel-ready Service locked by NetworkPolicy.
 
 ### Required tenant files
 

@@ -117,7 +117,7 @@ cloudflared tunnel route dns ci-mcp ci-mcp.example.com
 
 # Run it, pointing at the MCP service:
 #   - local dev:      http://localhost:3001
-#   - kx port-forward: kubectl -n tenants-protohype port-forward svc/competitive-intelligence 3001:3001
+#   - kx port-forward: kubectl -n tenants-competitive-intelligence port-forward svc/competitive-intelligence 3001:3001
 cloudflared tunnel run --url http://localhost:3001 ci-mcp
 ```
 

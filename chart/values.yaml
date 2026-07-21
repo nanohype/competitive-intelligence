@@ -41,7 +41,7 @@ serviceAccount:
 # under `env:` carries the same values into the app's OTel SDK at runtime.
 otel:
   resourceAttributes:
-    agents.tenant: protohype
+    agents.tenant: strategy
     agents.platform: competitive-intelligence
 
 resources:
@@ -247,7 +247,7 @@ env:
   # fs spans are noise for a long-lived crawler — drop them at the preload.
   OTEL_NODE_DISABLED_INSTRUMENTATIONS: fs
   # Resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT.
-  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=protohype,agents.platform=competitive-intelligence'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=strategy,agents.platform=competitive-intelligence'
 
 # Per-tenant infrastructure references — populated by per-env values from the
 # landing-zone competitive-intelligence-platform component's outputs. Empty at
