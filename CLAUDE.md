@@ -6,7 +6,7 @@ Competitive-intelligence radar — crawls competitor sites, semantic-diffs each 
 
 ## What This Is
 
-A standalone Platform tenant of the `protohype` team on the `eks-agent-platform` operator. It has two halves. An autonomous **push radar**: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert, on a schedule. And an interactive **pull surface**: an MCP server whose tools any Claude surface (Claude Tag et al.) calls to search the accumulated intelligence, trigger a crawl, and inspect status/sources. The same intelligence is also queryable from the CLI.
+A standalone Platform tenant of the `strategy` team on the `eks-agent-platform` operator. It has two halves. An autonomous **push radar**: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert, on a schedule. And an interactive **pull surface**: an MCP server whose tools any Claude surface (Claude Tag et al.) calls to search the accumulated intelligence, trigger a crawl, and inspect status/sources. The same intelligence is also queryable from the CLI.
 
 Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config, so swapping a backend is a one-file change to the bootstrap. Bedrock is the default for LLM (Converse) and embeddings (Titan v2), running on the AWS credential chain → EKS Pod Identity on the cluster, no keys. Anthropic and OpenAI are pluggable alternates.
 
@@ -140,7 +140,7 @@ When adding tests: mock providers by implementing the interface directly (`LlmPr
 Ships as the `competitive-intelligence` Platform tenant. No in-repo IaC and no manual rollout — ArgoCD reconciles the chart from git.
 
 1. **Substrate** — `landing-zone/components/aws/competitive-intelligence-platform/` provisions Aurora Serverless v2 (pgvector), the IAM role, and Secrets Manager entries. It owns the IAM role and the EKS Pod Identity association binding the ServiceAccount to it; the Aurora endpoint feeds `tenantInfra.*`.
-2. **Platform CR** — `kubectl apply -f platform.yaml` once. The operator reconciles Namespace `tenants-protohype`, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the tenant IRSA. Wait for `Ready`.
+2. **Platform CR** — `kubectl apply -f platform.yaml` once, into the `tenants-strategy` team namespace. The operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, default-deny NetworkPolicy, the ArgoCD AppProject, and the tenant IAM role. Wait for `Ready`.
 3. **GitOps** — `gitops/applicationset-entry.yaml` is registered in `nanohype/eks-gitops`. ArgoCD renders the chart per env and rolls out the Deployment. New image tags flow through the release workflow → GHCR → ArgoCD.
 
-Observability is cluster-level via eks-gitops: app stderr → log forwarder → Loki; OTLP traces + metrics → `grafana-agent.monitoring.svc.cluster.local:4318` → Tempo + AMP. No per-pod sidecars. Required resource attrs `agents.tenant=protohype` + `agents.platform=competitive-intelligence` ride on every span/metric. See `chart/README.md` for the full template-by-template description.
+Observability is cluster-level via eks-gitops: app stderr → log forwarder → Loki; OTLP traces + metrics → `grafana-agent.monitoring.svc.cluster.local:4318` → Tempo + AMP. No per-pod sidecars. Required resource attrs `agents.tenant=strategy` + `agents.platform=competitive-intelligence` ride on every span/metric. See `chart/README.md` for the full template-by-template description.

@@ -34,7 +34,7 @@ local `_helpers.tpl`; those helpers live in the base subchart.
 
 The chart alone is not enough to run the app. Two sibling files at the repo root complete the tenant trio:
 
-- `../platform.yaml` — Platform CR + BudgetPolicy declaring this app as a tenant of the `protohype` team. The operator reconciles the Namespace, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the per-tenant IRSA role from this CR. Apply once during initial setup.
+- `../platform.yaml` — Platform CR + BudgetPolicy declaring this app as a tenant of the `strategy` team. The operator reconciles the `tenants-competitive-intelligence` Namespace, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the per-tenant IAM role from this CR. Apply once during initial setup.
 - `../gitops/applicationset-entry.yaml` — ApplicationSet entry registered into `nanohype/eks-gitops`. ArgoCD picks up the entry and rolls out this chart per cluster/env.
 
 ## Required landing-zone component

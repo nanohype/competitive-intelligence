@@ -42,7 +42,7 @@ tasks:
       - npm run build
 
   lint:
-    desc: ESLint
+    desc: Lint the app (Biome)
     cmds:
       - npm run lint
 
@@ -52,7 +52,7 @@ tasks:
       - npm run typecheck
 
   format:check:
-    desc: Prettier --check
+    desc: Check formatting (Biome)
     cmds:
       - npm run format:check
 

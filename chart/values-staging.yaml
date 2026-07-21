@@ -10,7 +10,7 @@ externalSecret:
 
 env:
   NODE_ENV: production
-  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,deployment.environment=staging,agents.tenant=protohype,agents.platform=competitive-intelligence'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,deployment.environment=staging,agents.tenant=strategy,agents.platform=competitive-intelligence'
 
 tenantInfra:
   # Fill the empties below from the landing-zone competitive-intelligence-platform
