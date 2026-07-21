@@ -57,19 +57,38 @@ jobs:
       - name: Build (emit dist)
         run: npm run build
 
-      - name: Install Helm
-        uses: azure/setup-helm@v4
+  helm:
+    name: Helm Lint + Template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
         with:
           version: v3.16.0
 
       - name: Helm lint chart
         run: helm lint chart
 
-      - name: Helm template (staging + production)
+      # All three envs, and both sides of the optional-template toggles: a
+      # values key that only exists on one branch of an `if` breaks the render
+      # for exactly the deployments that flip it.
+      - name: Helm template (development + staging + production)
         run: |
           mkdir -p rendered
+          helm template competitive-intelligence chart -f chart/values-development.yaml > rendered/development.yaml
           helm template competitive-intelligence chart -f chart/values-staging.yaml > rendered/staging.yaml
           helm template competitive-intelligence chart -f chart/values-production.yaml > rendered/production.yaml
+
+      - name: Helm template (optional templates forced off / on)
+        run: |
+          TOGGLES="prometheusRule grafanaDashboard externalSecret networkPolicy serviceMonitor"
+          OFF=""; ON=""
+          for t in $TOGGLES; do OFF="$OFF --set $t.enabled=false"; ON="$ON --set $t.enabled=true"; done
+          for env in development staging production; do
+            helm template competitive-intelligence chart -f "chart/values-$env.yaml" $OFF > /dev/null
+            helm template competitive-intelligence chart -f "chart/values-$env.yaml" $ON > "rendered/$env-all-on.yaml"
+          done
 
       # Source files are gated elsewhere; this asserts the RENDERED chart too —
       # a zero account id, placeholder token, or account-less ARN that only
@@ -78,6 +97,48 @@ jobs:
         uses: nanohype/nanohype/.github/actions/render-assert@main
         with:
           manifests: rendered
+
+  platform-manifests:
+    name: Platform Manifest Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The CRD schemas the validator checks platform.yaml against are vendored
+      # under schemas/crds/ from the operator repo at the SHA pinned in
+      # schemas/crds/source.json. Checking that exact SHA out — rather than a
+      # branch — is what makes this gate deterministic: the schema CI validates
+      # against cannot change without a commit here that moves the pin.
+      - name: Read the pinned operator ref
+        id: pin
+        run: |
+          echo "repo=$(jq -r .repo schemas/crds/source.json)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(jq -r .ref schemas/crds/source.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout eks-agent-platform at the pinned ref
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pin.outputs.repo }}
+          ref: ${{ steps.pin.outputs.ref }}
+          path: .eks-agent-platform
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - run: npm install --prefer-offline --no-audit --no-fund
+
+      # Fails if a vendored copy was hand-edited instead of re-synced, so the
+      # schemas the next step trusts are provably the generated ones.
+      - name: CRD schema drift check
+        run: npm run schemas:crds:check
+        env:
+          EKS_AGENT_PLATFORM_DIR: .eks-agent-platform
+
+      - name: Validate platform.yaml against the CRD schemas
+        run: npm run platform:validate
 
   docker:
     name: docker build (no push)

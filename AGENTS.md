@@ -53,9 +53,19 @@ Shipping this on a cluster means three artifacts travel together: the **Platform
 
 ### The Platform CR (`platform.yaml`)
 
-Two CRs in different groups — a `BudgetPolicy` (`governance.nanohype.dev/v1alpha1`) and the `Platform` (`platform.nanohype.dev/v1alpha1`) that references it:
+Three CRs — a cluster-scoped `Tenant` (`platform.nanohype.dev/v1alpha1`) for the owning team, a `BudgetPolicy` (`governance.nanohype.dev/v1alpha1`), and the `Platform` (`platform.nanohype.dev/v1alpha1`) that references both:
 
 ```yaml
+apiVersion: platform.nanohype.dev/v1alpha1
+kind: Tenant
+metadata:
+  name: strategy
+spec:
+  displayName: Strategy
+  primaryPersona: marketing
+  aggregateMonthlyBudgetUsd: '2500'
+  compliance: { soc2: true, hipaa: false }
+---
 apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
@@ -63,7 +73,7 @@ metadata:
   namespace: tenants-strategy
 spec:
   platformRef: { name: competitive-intelligence }
-  monthlyUsd: '2500' # kill-switch fires at 120%
+  monthlyUsd: '2500' # kill-switch fires at 120% (USD 3000)
   alertThresholdsPercent: [50, 80, 100]
   killSwitchEnabled: true
 ---
@@ -78,13 +88,16 @@ spec:
   tenant: strategy
   budget: { name: competitive-intelligence }
   identity:
-    allowedModelFamilies: [anthropic, amazon] # Claude (LLM) + Titan (embeddings)
-    extraPolicyArns: [] # app pods assume the landing-zone role directly
+    allowedModels: # Claude Sonnet (diff analysis) + Titan (chunk embeddings)
+      - us.anthropic.claude-sonnet-4-20250514-v1:0
+      - us.anthropic.claude-sonnet-4-6
+      - amazon.titan-embed-text-v2:0
+    extraPolicyArns: [] # filled per env with the landing-zone app-access policy
   compliance: { soc2: true }
   isolation: namespace
 ```
 
-Both CRs are authored in `tenants-strategy`, the strategy team's control-plane namespace. From `Platform.metadata.name` the operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, LimitRange, default-deny NetworkPolicy, and the ArgoCD AppProject `competitive-intelligence`. **The app pods assume the landing-zone `competitive-intelligence-platform` IAM role directly** via an EKS Pod Identity association (the chart's ServiceAccount, name pinned to the app, carries no role-arn annotation) — that's why `extraPolicyArns` stays empty.
+The `Tenant` is cluster-scoped — it is the strategy team as an organizational boundary, and `Platform.spec.tenant` references it by name. The `BudgetPolicy` and `Platform` live in `tenants-strategy`, the strategy team's control-plane namespace. From `Platform.metadata.name` the operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject `competitive-intelligence`, and the `<env>-competitive-intelligence-tenant` IAM role with Bedrock invoke clamped to `spec.identity.allowedModels`. App pods and AgentFleet pods share that one role — the chart's ServiceAccount binds to it through the EKS Pod Identity association the landing-zone `competitive-intelligence-platform` component creates (no role-arn annotation), and the app's substrate grants reach it as an `extraPolicyArns` entry filled per environment at apply time.
 
 Two tokens, two scopes: `spec.tenant` is the owning team (`strategy`) and drives labels, tags, and OTel attributes; `metadata.name` is the app (`competitive-intelligence`) and drives the workload namespace, the AppProject, and the tenant IAM role name.
 
@@ -96,7 +109,7 @@ The application Deployment plus everything that supports it. Templates under `ch
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deployment.yaml`        | The main pod — scheduler + crawler + outbound alert sink + MCP server + HTTP health server, one process. `replicaCount: 1` (single-writer crawl mutex)                                                                              |
 | `service.yaml`           | ClusterIP with two ports — the health port (`/health` + `/readyz`) and the MCP port the mcp-tunnel routes to                                                                                                                        |
-| `serviceaccount.yaml`    | name pinned to the app; bound to the landing-zone IAM role by an EKS Pod Identity association. No role-arn annotation, no inline IAM                                                                                                |
+| `serviceaccount.yaml`    | name pinned to the app; bound to the `<env>-competitive-intelligence-tenant` IAM role by an EKS Pod Identity association. No role-arn annotation, no inline IAM                                                                     |
 | `externalsecret.yaml`    | ESO syncs `competitive-intelligence/<env>/app-secrets` (Slack bot token + optional provider keys) + `competitive-intelligence/<env>/db-credentials` (PG creds) from Secrets Manager                                                 |
 | `networkpolicy.yaml`     | Default-deny + egress allow-list (DNS, HTTPS to crawl targets + Bedrock + Slack with IMDS blocked, Postgres on the VPC CIDR). Ingress: same-namespace probes + the MCP port from the `mcp-tunnel` namespace only. No public ingress |
 | `prometheusrule.yaml`    | Alerts — crawl failures, circuit-breaker open, alert-send failures, pgvector unreachable                                                                                                                                            |
@@ -108,9 +121,17 @@ The application Deployment plus everything that supports it. Templates under `ch
 
 A valid tenant in this repo is exactly these three, plus the chart's per-env values:
 
-- `platform.yaml` — the `BudgetPolicy` + `Platform` CRs
+- `platform.yaml` — the cluster-scoped `Tenant` + the `BudgetPolicy` + `Platform` CRs
 - `chart/` — the chart above, with `values.yaml` + `values-{development,staging,production}.yaml`
 - `gitops/applicationset-entry.yaml` — the ApplicationSet entry registered into `nanohype/eks-gitops` (matrix generator over clusters × the app, Helm multi-source `$values` resolving `values.yaml` + `values-<env>.yaml`)
+
+`npm run platform:validate` (CI job **Platform Manifest Validation**, and `task platform:validate` locally) checks `platform.yaml` before a cluster ever sees it. It walks every document against the real operator CRD schemas vendored under `schemas/crds/` — copied from `nanohype/eks-agent-platform` at the SHA pinned in `schemas/crds/source.json`, so the gate is deterministic and adopting a newer operator API is an explicit commit. Three things it catches that `kubectl apply --dry-run=client` does not:
+
+- **Unknown fields.** controller-gen emits no `additionalProperties: false`, so `allowedModls:` passes a stock JSON-schema validator and is then silently pruned by the apiserver — leaving a Platform whose IAM role grants no Bedrock access at all. The walker treats any property absent from `properties` as an error unless the schema opts into open content.
+- **Scope.** `Tenant` is cluster-scoped and must carry no `metadata.namespace`; `Platform` and `BudgetPolicy` must carry one. Scope is read from each CRD's own `spec.scope`.
+- **Cross-references.** `Platform.spec.tenant` == the `Tenant`'s name, the budget references round-trip, and `agents.tenant` / `agents.platform` in every chart values file match both. A rename that lands in one file and not the others fails here rather than in a half-reconciled namespace.
+
+If the vendored schemas are missing or unparseable the gate exits non-zero and says so. It never passes for want of a schema.
 
 ## Add a crawl source
 

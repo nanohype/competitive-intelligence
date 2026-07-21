@@ -47,8 +47,10 @@ jobs:
           scan-type: config
           # Scoped to the Dockerfile — the one config artifact this repo owns
           # and can remediate. The Helm chart is covered by the ci workflow's
-          # helm lint + template steps; platform.yaml (a Platform CR) and
-          # gitops/applicationset-entry.yaml (an ArgoCD ApplicationSet) are not
+          # Helm Lint + Template job; platform.yaml is covered by its Platform
+          # Manifest Validation job, which checks the CRs against the operator's
+          # own CRD schemas. Neither those CRs nor
+          # gitops/applicationset-entry.yaml (an ArgoCD ApplicationSet) are
           # standard workloads, so trivy's generic Kubernetes checks misfire on
           # them rather than surfacing real findings.
           scan-ref: Dockerfile

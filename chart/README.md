@@ -34,7 +34,7 @@ local `_helpers.tpl`; those helpers live in the base subchart.
 
 The chart alone is not enough to run the app. Two sibling files at the repo root complete the tenant trio:
 
-- `../platform.yaml` — Platform CR + BudgetPolicy declaring this app as a tenant of the `strategy` team. The operator reconciles the `tenants-competitive-intelligence` Namespace, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the per-tenant IAM role from this CR. Apply once during initial setup.
+- `../platform.yaml` — the cluster-scoped `Tenant` `strategy` plus the `BudgetPolicy` and `Platform` declaring this app as a tenant of the strategy team. The operator reconciles the `tenants-competitive-intelligence` Namespace, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the per-tenant IAM role from this CR. Apply once during initial setup.
 - `../gitops/applicationset-entry.yaml` — ApplicationSet entry registered into `nanohype/eks-gitops`. ArgoCD picks up the entry and rolls out this chart per cluster/env.
 
 ## Required landing-zone component
@@ -75,12 +75,17 @@ This chart owns the app's k8s surface. The cloud substrate and cluster addons si
 - `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alerts. Alertmanager (eks-gitops) routes them.
 - `grafana-dashboard.yaml` — a `GrafanaDashboard` CR loading the dashboard from `chart/dashboards/competitive-intelligence.json`; the grafana-operator reconciles it onto the external Amazon Managed Grafana.
 
-> **Collector requirement (eks-gitops).** The rules and dashboard query the
-> `competitive_intelligence_*` series with a `deployment_environment` label. That
-> series name + label only materialize if the cluster OTel Collector's Prometheus
-> pipeline applies a `competitive_intelligence` namespace and enables
-> `resource_to_telemetry_conversion` (promoting the `service.name` /
-> `deployment.environment` resource attributes — set here via `OTEL_RESOURCE_ATTRIBUTES`
-> — to metric labels). If panels read empty, check that collector config first.
-> The pod also needs egress to the collector on tcp/4318 (`networkPolicy.egress`,
-> already included here).
+> **Collector requirement (eks-gitops).** Metrics leave the pod as OTLP to the
+> Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`), whose OTLP
+> receiver hands them to a Prometheus exporter and a SigV4-signed `remote_write`
+> into the cluster's Amazon Managed Service for Prometheus workspace. The
+> `competitive_intelligence_*` series name needs nothing from the collector — the
+> meter self-prefixes with the service namespace, and the OTLP→Prometheus
+> translation supplies the `_total` / `_bucket` suffixes. The
+> `deployment_environment` label the dashboard filters on is a different story:
+> resource attributes only become metric labels when Alloy's
+> `otelcol.exporter.prometheus` sets `resource_to_telemetry_conversion` (off by
+> default, in which case they land on `target_info` instead). If panels read
+> empty, check that exporter config in `eks-gitops/addons/observability/alloy`
+> first. The pod also needs egress to the collector on tcp/4318
+> (`networkPolicy.egress`, already included here).
