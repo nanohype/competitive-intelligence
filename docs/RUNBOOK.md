@@ -20,7 +20,7 @@ On-call reference for the `competitive-intelligence` Platform tenant. Pairs with
   it can be a Claude custom connector — dashboard, env, connector, and
   self-tunnel steps in [`mcp-oauth.md`](mcp-oauth.md).
 - **Logs:** structured JSON to stderr → cluster log forwarder → Loki.
-- **Telemetry:** OTLP traces + metrics → `grafana-agent.monitoring` → Tempo + AMP.
+- **Telemetry:** OTLP traces + metrics → `alloy.monitoring` → Tempo + AMP.
 
 ## Dashboards
 

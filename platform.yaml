@@ -2,13 +2,16 @@
 # team on the eks-agent-platform operator. Apply once per cluster before the
 # ApplicationSet entry starts reconciling the chart.
 #
-# Both CRs below live in `tenants-strategy`, the strategy team's control-plane
-# namespace. That is where the CRs are authored, not where the app runs — the
-# operator derives the workload namespace from `Platform.metadata.name`.
-#
-# Two CRs declared here:
+# Three CRs declared here:
+#   - Tenant       (cluster-scoped; the strategy team the Platform belongs to)
 #   - BudgetPolicy (referenced by Platform.spec.budget — required)
 #   - Platform     (the actual tenant declaration)
+#
+# The Tenant and BudgetPolicy/Platform CRs live in different scopes: Tenant is
+# cluster-scoped, the other two are namespaced into `tenants-strategy` — the
+# strategy team's control-plane namespace, which holds the CRs and nothing else.
+# That is where the CRs are authored, not where the app runs — the operator
+# derives the workload namespace from `Platform.metadata.name`.
 #
 # What the operator reconciles from the Platform CR:
 #   - Namespace `tenants-competitive-intelligence` (Pod Security Standards
@@ -39,6 +42,24 @@
 # Once that component's per-env entry applies, its outputs wire into the chart's
 # per-env values (`tenantInfra.*`).
 
+---
+apiVersion: platform.nanohype.dev/v1alpha1
+kind: Tenant
+metadata:
+  name: strategy
+  labels:
+    agents.nanohype.dev/tenant: strategy
+spec:
+  displayName: Strategy
+  # Competitive intel is a marketing/strategy function — matches
+  # Platform.spec.persona below.
+  primaryPersona: marketing
+  # Soft ceiling on the sum of every owned Platform's BudgetPolicy.monthlyUsd.
+  # competitive-intelligence is the only Platform under this Tenant today.
+  aggregateMonthlyBudgetUsd: '2500'
+  compliance:
+    soc2: true
+    hipaa: false
 ---
 apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy

@@ -102,7 +102,7 @@ externalSecret:
 prometheusRule:
   # Ships SLO recording rules + burn-rate alerts to a Prometheus Operator
   # (kube-prometheus-stack) via the PrometheusRule CR. Off by default — inert
-  # without an operator, which the managed-Prometheus stack (grafana-agent + AMP,
+  # without an operator, which the managed-Prometheus stack (Alloy + AMP,
   # alerts in Amazon Managed Grafana) doesn't run. Set `enabled: true` on a
   # cluster that runs one.
   enabled: false
@@ -178,8 +178,8 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
-    # OTLP traces + metrics + logs to the grafana-agent OTLP receiver in the
-    # monitoring namespace (grafana-agent.monitoring.svc.cluster.local:4318).
+    # OTLP traces + metrics + logs to the Grafana Alloy OTLP receiver in the
+    # monitoring namespace (alloy.monitoring.svc.cluster.local:4318).
     # Without this rule the default-deny policy drops every span/metric/log.
     - to:
         - namespaceSelector:
@@ -232,13 +232,13 @@ env:
   #   WORKOS_AUTHKIT_ISSUER: https://<tenant>.authkit.app
   #   MCP_PUBLIC_URL: https://<public-tunnel-host>/mcp
   NODE_ENV: production
-  # OTel — exports to the grafana-agent OTLP receiver in the monitoring namespace,
+  # OTel — exports to the Grafana Alloy OTLP receiver in the monitoring namespace,
   # which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecar.
   # Telemetry is initialized once, by the Dockerfile's
   # `--require @opentelemetry/auto-instrumentations-node/register` preload, so
   # all export config is env-driven here (no programmatic SDK in app code).
   OTEL_SERVICE_NAME: competitive-intelligence
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana-agent.monitoring.svc.cluster.local:4318
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.monitoring.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_TRACES_SAMPLER: always_on
   OTEL_TRACES_EXPORTER: otlp
