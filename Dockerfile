@@ -31,8 +31,8 @@ EXPOSE 3000
 
 # OTel auto-instrumentation: the --require hook loads the SDK + instrumentations
 # before user code, so http/fetch/aws-sdk/pg are traced automatically. The OTLP
-# target is the cluster OTel Collector at
-# grafana-agent.monitoring.svc.cluster.local:4318 (set via
+# target is the cluster's Grafana Alloy collector at
+# alloy.monitoring.svc.cluster.local:4318 (set via
 # OTEL_EXPORTER_OTLP_ENDPOINT in the chart).
 ENV NODE_OPTIONS="--require @opentelemetry/auto-instrumentations-node/register"
 

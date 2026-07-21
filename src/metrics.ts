@@ -1,10 +1,11 @@
 /**
  * Application metrics via the OTel Metrics API.
  *
- * Exports OTLP to the cluster OTel Collector. The meter provider is installed by
- * the Dockerfile's `--require @opentelemetry/auto-instrumentations-node/register`
+ * Exports OTLP to the cluster's Grafana Alloy collector. The meter provider is
+ * installed by the Dockerfile's
+ * `--require @opentelemetry/auto-instrumentations-node/register`
  * preload (env-driven); the chart points it at
- * `grafana-agent.monitoring.svc.cluster.local:4318` → AMP.
+ * `alloy.monitoring.svc.cluster.local:4318` → AMP.
  *
  * The lazy-instrument core (namespace qualification, per-name caching, no-op
  * degradation without a provider) is the vendored `@nanohype/runtime` metrics
