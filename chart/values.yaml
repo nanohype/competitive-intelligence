@@ -237,6 +237,11 @@ env:
   # Telemetry is initialized once, by the Dockerfile's
   # `--require @opentelemetry/auto-instrumentations-node/register` preload, so
   # all export config is env-driven here (no programmatic SDK in app code).
+  # service.name is set here and only here. OTEL_SERVICE_NAME takes precedence
+  # over a service.name entry in OTEL_RESOURCE_ATTRIBUTES, so carrying it in
+  # both places would leave one of them silently dead — the attrs string below
+  # uses service.namespace instead, the semconv attribute for the group a
+  # service belongs to (here: the Platform boundary).
   OTEL_SERVICE_NAME: competitive-intelligence
   OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.monitoring.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -247,7 +252,7 @@ env:
   # fs spans are noise for a long-lived crawler — drop them at the preload.
   OTEL_NODE_DISABLED_INSTRUMENTATIONS: fs
   # Resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT.
-  OTEL_RESOURCE_ATTRIBUTES: 'service.name=competitive-intelligence,service.version=0.1.0,agents.tenant=strategy,agents.platform=competitive-intelligence'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=competitive-intelligence,service.version=0.1.0,agents.tenant=strategy,agents.platform=competitive-intelligence'
 
 # Per-tenant infrastructure references — populated by per-env values from the
 # landing-zone competitive-intelligence-platform component's outputs. Empty at

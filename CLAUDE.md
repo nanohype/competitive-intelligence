@@ -54,11 +54,13 @@ npm run format:check # Biome
 npm run sync:vendored # re-sync vendored copies (runtime, config, chart base) from ../nanohype (":check" = drift gate)
 ```
 
-Chart + container:
+Chart + platform CRs + container:
 
 ```bash
-npm run chart:lint   # helm lint chart
-task ci              # full local gate (build + lint + typecheck + format:check + test + helm + docker)
+npm run chart:lint       # helm lint chart
+npm run platform:validate # validate platform.yaml against the vendored operator CRD schemas
+npm run schemas:crds     # re-vendor those schemas from the pinned eks-agent-platform ref (":check" = drift gate)
+task ci                  # full local gate (build + lint + typecheck + format:check + test + platform CRs + helm + docker)
 ```
 
 ## Configuration
@@ -101,6 +103,7 @@ Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment
 - Provider registry pattern: `createRegistry<T>(kind)` returns typed `{ register, get, has, names }` — vendored from `@nanohype/runtime`
 - Circuit breaker for external calls — per-host for the HTTP fetcher, per-provider for LLM and embeddings. Sliding-window semantics (vendored from `@nanohype/runtime`, wired via `src/resilience/`): trips on failure density within the window, single half-open probe after the cooldown
 - Vendored modules under `src/vendor/runtime/` stay byte-identical to `nanohype/library/runtime` — behavior changes land upstream with their tests, then `npm run sync:vendored` here (`sync:vendored:check` is the CI drift gate)
+- `platform.yaml` is CI-validated against the real operator CRD schemas vendored under `schemas/crds/` (from `eks-agent-platform` at the SHA pinned in `schemas/crds/source.json`). The walker is strict about unknown fields — controller-gen emits no `additionalProperties: false`, so a misspelled spec key would otherwise validate clean and then be pruned silently by the apiserver. It also asserts scope (`Tenant` cluster-scoped, `Platform`/`BudgetPolicy` namespaced) and that the tenant/platform names agree across the CRs and every chart values file's OTel attributes
 - Bedrock-default LLM; prompt-cached analysis system prompt via Converse `cachePoint`
 - No framework lock-in for LLMs — direct SDK calls via the provider interface
 - Single-writer: `replicaCount: 1`; the scheduler, alert sink, and MCP server share one process, and the crawl mutex prevents overlapping scheduler + `trigger_crawl` runs (no horizontal scale without leader election)
@@ -140,7 +143,7 @@ When adding tests: mock providers by implementing the interface directly (`LlmPr
 Ships as the `competitive-intelligence` Platform tenant. No in-repo IaC and no manual rollout — ArgoCD reconciles the chart from git.
 
 1. **Substrate** — `landing-zone/components/aws/competitive-intelligence-platform/` provisions Aurora Serverless v2 (pgvector), the IAM role, and Secrets Manager entries. It owns the IAM role and the EKS Pod Identity association binding the ServiceAccount to it; the Aurora endpoint feeds `tenantInfra.*`.
-2. **Platform CR** — `kubectl apply -f platform.yaml` once, into the `tenants-strategy` team namespace. The operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, default-deny NetworkPolicy, the ArgoCD AppProject, and the tenant IAM role. Wait for `Ready`.
+2. **Platform CR** — `kubectl apply -f platform.yaml` once. It carries three documents: the cluster-scoped `Tenant` `strategy`, plus the `BudgetPolicy` and `Platform` authored in the `tenants-strategy` team namespace. The operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, default-deny NetworkPolicy, the ArgoCD AppProject, and the tenant IAM role. Wait for `Ready`.
 3. **GitOps** — `gitops/applicationset-entry.yaml` is registered in `nanohype/eks-gitops`. ArgoCD renders the chart per env and rolls out the Deployment. New image tags flow through the release workflow → GHCR → ArgoCD.
 
 Observability is cluster-level via eks-gitops: app stderr → log forwarder → Loki; OTLP traces + metrics → `alloy.monitoring.svc.cluster.local:4318` → Tempo + AMP. No per-pod sidecars. Required resource attrs `agents.tenant=strategy` + `agents.platform=competitive-intelligence` ride on every span/metric. See `chart/README.md` for the full template-by-template description.

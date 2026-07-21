@@ -17,9 +17,12 @@
     "format:check": "biome format .",
     "typecheck": "tsc --noEmit",
     "docs": "echo 'Docs: README.md, AGENTS.md, ARCHITECTURE.md, docs/'",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run platform:validate",
     "sync:vendored": "node scripts/sync-vendored.mjs",
     "sync:vendored:check": "node scripts/sync-vendored.mjs --check",
+    "schemas:crds": "node scripts/sync-crd-schemas.mjs",
+    "schemas:crds:check": "node scripts/sync-crd-schemas.mjs --check",
+    "platform:validate": "node scripts/validate-platform-manifests.mjs",
     "chart:lint": "helm lint chart",
     "chart:template:staging": "helm template competitive-intelligence chart -f chart/values-staging.yaml",
     "chart:template:production": "helm template competitive-intelligence chart -f chart/values-production.yaml",
@@ -48,7 +51,8 @@
     "@vitest/coverage-v8": "^4.1.4",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "ws": "^8.21.0",

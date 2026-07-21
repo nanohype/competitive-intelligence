@@ -12,7 +12,7 @@ tasks:
   # === Composite ===
 
   ci:
-    desc: 'Full local CI: install, build, lint, typecheck, format:check, test, helm lint/template, docker build'
+    desc: 'Full local CI: install, build, lint, typecheck, format:check, test, platform CRs, helm lint/template, docker build'
     cmds:
       - task: install
       - task: build
@@ -20,6 +20,7 @@ tasks:
       - task: typecheck
       - task: format:check
       - task: test
+      - task: platform:validate
       - task: helm:lint
       - task: helm:template
       - task: docker:build
@@ -61,6 +62,23 @@ tasks:
     cmds:
       - npm run test:coverage
 
+  # === Platform CRs ===
+
+  platform:validate:
+    desc: Validate platform.yaml against the vendored operator CRD schemas
+    cmds:
+      - node scripts/validate-platform-manifests.mjs
+
+  schemas:crds:
+    desc: Re-vendor the operator CRD schemas from the ref pinned in schemas/crds/source.json
+    cmds:
+      - node scripts/sync-crd-schemas.mjs
+
+  schemas:crds:check:
+    desc: Assert the vendored CRD schemas are byte-identical to the pinned upstream ref
+    cmds:
+      - node scripts/sync-crd-schemas.mjs --check
+
   # === Helm ===
 
   helm:lint:
@@ -69,11 +87,19 @@ tasks:
       - helm lint chart
 
   helm:template:
-    desc: Render the chart against development + staging + production values
+    desc: Render the chart against every env, with the optional templates off and on
     cmds:
       - helm template chart -f chart/values.yaml -f chart/values-development.yaml > /dev/null
       - helm template chart -f chart/values.yaml -f chart/values-staging.yaml > /dev/null
       - helm template chart -f chart/values.yaml -f chart/values-production.yaml > /dev/null
+      - |
+        TOGGLES="prometheusRule grafanaDashboard externalSecret networkPolicy serviceMonitor"
+        OFF=""; ON=""
+        for t in $TOGGLES; do OFF="$OFF --set $t.enabled=false"; ON="$ON --set $t.enabled=true"; done
+        for env in development staging production; do
+          helm template chart -f chart/values.yaml -f "chart/values-$env.yaml" $OFF > /dev/null
+          helm template chart -f chart/values.yaml -f "chart/values-$env.yaml" $ON > /dev/null
+        done
 
   # === Docker ===
 
