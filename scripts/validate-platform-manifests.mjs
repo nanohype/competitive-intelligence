@@ -10,12 +10,15 @@
  *
  * Four layers of checking:
  *
- * 0. PROVENANCE. Every schema file declared in `schemas/crd/source.json` is
+ * 0. INTEGRITY. Every schema file declared in `schemas/crd/source.json` is
  *    hashed and compared to the SHA-256 recorded there before it is parsed, and
  *    stray YAML in that directory is an error. This is what makes the gate
  *    tamper-evident offline: widening an enum in a vendored copy so the
  *    manifest slips through is caught here, on a laptop with no network, not
  *    only by the CI job that checks the copies against the upstream ref.
+ *    `source.json` records a pin plus digests and nothing more — it is not a
+ *    provenance record, and the checks here do not attest to anything beyond
+ *    "these bytes are the bytes that were recorded".
  *
  * 1. SCHEMA. Every document is matched to a CRD by apiVersion + kind and walked
  *    against that CRD's `openAPIV3Schema`. The walk is STRICT about unknown
@@ -48,7 +51,7 @@
  * its schema is worse than no gate.
  *
  * `--self-test` breaks the inputs in memory several ways — including handing
- * the provenance check a tampered schema — and fails unless every one of them
+ * the integrity check a tampered schema — and fails unless every one of them
  * is rejected. It writes nothing. Running it in CI next to the real validation
  * is what keeps the gate's rejection behaviour a tested property rather than an
  * assertion in a comment.
@@ -212,7 +215,7 @@ function walk(value, schema, path, errors) {
   }
 }
 
-// ── provenance ──────────────────────────────────────────────────────────────
+// ── schema integrity ────────────────────────────────────────────────────────
 
 async function readSourceManifest() {
   let raw;
@@ -247,7 +250,7 @@ async function readSourceManifest() {
     if (!/^[0-9a-f]{64}$/.test(entry.sha256 ?? "")) {
       abort(
         `schemas/crd/source.json entry \`${entry.file}\` carries no 64-character sha256 — ` +
-          "the gate refuses to validate against a schema whose provenance it cannot check; " +
+          "the gate refuses to validate against a schema whose bytes it cannot verify; " +
           "run `npm run schemas:sync`",
       );
     }
@@ -578,7 +581,7 @@ function validate(documents, schemas, chartValues) {
 /**
  * Break the inputs in memory and assert each break is rejected, then assert the
  * committed inputs pass. Nothing is written. The first case covers the
- * provenance layer — the one a schema-trusting gate misses — by handing
+ * integrity layer — the one a schema-trusting gate misses — by handing
  * `verifyDigest` a schema whose bytes have been edited the way a widened enum
  * would edit them.
  *
@@ -588,7 +591,7 @@ function selfTest(documents, schemaBytes, sourceManifest, schemas, chartValues) 
   const failures = [];
   const log = (ok, line) => console.log(`  ${ok ? "PASS" : "FAIL"}  ${line}`);
 
-  // Provenance: a tampered vendored schema must never reach the walker.
+  // Integrity: a tampered vendored schema must never reach the walker.
   {
     const entry = sourceManifest.files.find((f) => f.file.endsWith("_platforms.yaml"));
     const original = schemaBytes.get(entry.file).toString("utf8");
