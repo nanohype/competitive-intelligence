@@ -72,7 +72,7 @@ This chart owns the app's k8s surface. The cloud substrate and cluster addons si
 
 **This chart:** the worker `Deployment`, the default-deny `networkpolicy.yaml`, the `externalsecret.yaml`, plus the observability that ships here rather than in eks-gitops:
 
-- `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alerts. Alertmanager (eks-gitops) routes them.
+- `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alert rules. **Nothing routes these on an EKS cluster, and the template is off by default there.** eks-gitops runs a managed metrics stack — Grafana Alloy receives OTLP and remote-writes to Amazon Managed Prometheus — with no kube-prometheus-stack and no Alertmanager, so no ruler evaluates a `PrometheusRule`. The CR still applies cleanly (`prometheus-operator-crds` is a bootstrap addon, so the kind exists), it is simply inert. Two places the rules do fire: the local `kx` cluster, which installs kube-prometheus-stack and has an in-cluster ruler — set `prometheusRule.enabled: true` there — and any other cluster running a Prometheus Operator. The production equivalent is a Grafana-managed alert rule evaluated by Amazon Managed Grafana against AMP, the same shape as `eks-gitops/dashboards/base/alerting/`.
 - `grafana-dashboard.yaml` — a `GrafanaDashboard` CR loading the dashboard from `chart/dashboards/competitive-intelligence.json`; the grafana-operator reconciles it onto the external Amazon Managed Grafana.
 
 > **Collector requirement (eks-gitops).** Metrics leave the pod as OTLP to the

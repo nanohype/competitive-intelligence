@@ -65,16 +65,20 @@ tasks:
   # === Platform CRs ===
 
   platform:validate:
-    desc: Validate platform.yaml against the vendored operator CRD schemas
+    desc: Validate platform.yaml against the vendored operator CRD schemas, then self-test the gate
     cmds:
+      # The first run is the gate. The second breaks the inputs in memory —
+      # including handing the digest check a tampered schema — and fails unless
+      # every break is rejected, so "the gate rejects" stays a tested property.
       - node scripts/validate-platform-manifests.mjs
+      - node scripts/validate-platform-manifests.mjs --self-test
 
-  schemas:crds:
-    desc: Re-vendor the operator CRD schemas from the ref pinned in schemas/crds/source.json
+  schemas:sync:
+    desc: Re-vendor the operator CRD schemas + digests from the ref pinned in schemas/crd/source.json
     cmds:
       - node scripts/sync-crd-schemas.mjs
 
-  schemas:crds:check:
+  schemas:check:
     desc: Assert the vendored CRD schemas are byte-identical to the pinned upstream ref
     cmds:
       - node scripts/sync-crd-schemas.mjs --check

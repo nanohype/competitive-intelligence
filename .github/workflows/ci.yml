@@ -73,6 +73,12 @@ jobs:
       # All three envs, and both sides of the optional-template toggles: a
       # values key that only exists on one branch of an `if` breaks the render
       # for exactly the deployments that flip it.
+      #
+      # `development` is rendered here as well as staging/production. It is the
+      # env whose values file is edited least and read most (local runs, kx),
+      # so it is the one most likely to rot unnoticed — and rendering it costs a
+      # second. Tenant repos setting up this job should copy both steps: the
+      # every-env render and the toggles-off/on matrix underneath it.
       - name: Helm template (development + staging + production)
         run: |
           mkdir -p rendered
@@ -105,15 +111,15 @@ jobs:
       - uses: actions/checkout@v4
 
       # The CRD schemas the validator checks platform.yaml against are vendored
-      # under schemas/crds/ from the operator repo at the SHA pinned in
-      # schemas/crds/source.json. Checking that exact SHA out — rather than a
+      # under schemas/crd/ from the operator repo at the SHA pinned in
+      # schemas/crd/source.json. Checking that exact SHA out — rather than a
       # branch — is what makes this gate deterministic: the schema CI validates
       # against cannot change without a commit here that moves the pin.
       - name: Read the pinned operator ref
         id: pin
         run: |
-          echo "repo=$(jq -r .repo schemas/crds/source.json)" >> "$GITHUB_OUTPUT"
-          echo "ref=$(jq -r .ref schemas/crds/source.json)" >> "$GITHUB_OUTPUT"
+          echo "repo=$(jq -r .repo schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(jq -r .ref schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout eks-agent-platform at the pinned ref
         uses: actions/checkout@v4
@@ -130,13 +136,24 @@ jobs:
 
       - run: npm install --prefer-offline --no-audit --no-fund
 
-      # Fails if a vendored copy was hand-edited instead of re-synced, so the
-      # schemas the next step trusts are provably the generated ones.
-      - name: CRD schema drift check
-        run: npm run schemas:crds:check
+      # Half one of the gate: upstream drift. Compares every vendored copy
+      # byte-for-byte against the operator repo at the pinned SHA and fails on
+      # any difference, so a pin that no longer describes the committed schemas
+      # — stale, or moved by hand — surfaces here. The script also refuses to
+      # run if the checkout's HEAD is not the pinned SHA, because a comparison
+      # against some other commit is a verdict about a commit this repo never
+      # pinned. Nothing is skipped: an unreachable checkout fails the job.
+      - name: CRD schema drift check (vendored copies vs the pinned ref)
+        run: npm run schemas:check
         env:
           EKS_AGENT_PLATFORM_DIR: .eks-agent-platform
 
+      # Half two: tamper evidence, then the manifest itself. The validator
+      # hashes every vendored schema against the SHA-256 recorded in
+      # source.json before parsing it, so an edited copy — an enum widened to
+      # admit the value under review, say — aborts the run instead of being
+      # trusted. That check needs no network, so it holds on a laptop too. The
+      # second invocation is the gate's self-test.
       - name: Validate platform.yaml against the CRD schemas
         run: npm run platform:validate
 
