@@ -1,0 +1,20 @@
+{
+  "_README": "Provenance for the vendored CRD schemas in this directory. The files are byte-identical copies of the controller-gen output in nanohype/eks-agent-platform at the pinned ref below — never hand-edit them. `ref` is what makes the gate deterministic; the per-file `sha256` is what makes it tamper-evident. `npm run schemas:sync` rewrites both the copies and the digests from that ref; `npm run schemas:check` is the CI drift gate against the same ref. To adopt a newer operator API, bump `ref`, check that ref out, and re-run the sync.",
+  "repo": "nanohype/eks-agent-platform",
+  "ref": "3ab89554fc0e79c4596367825eaff540a1a8c89b",
+  "sourceDir": "operators/config/crd/bases",
+  "files": [
+    {
+      "file": "platform.nanohype.dev_tenants.yaml",
+      "sha256": "09314d9c472917b3b20fe64e99bcd46d323b7684932fcdedbb923ff2f539fcbc"
+    },
+    {
+      "file": "platform.nanohype.dev_platforms.yaml",
+      "sha256": "57438968a4d80bf64086913153b323accb9c5bef67c2027fbe0e0b48f56ba6e6"
+    },
+    {
+      "file": "governance.nanohype.dev_budgetpolicies.yaml",
+      "sha256": "551183bc44d371656cb39766e48da8b0b9130b7565f6c0fbbf7a2c85f826b2bf"
+    }
+  ]
+}

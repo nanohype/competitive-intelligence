@@ -20,9 +20,9 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run platform:validate",
     "sync:vendored": "node scripts/sync-vendored.mjs",
     "sync:vendored:check": "node scripts/sync-vendored.mjs --check",
-    "schemas:crds": "node scripts/sync-crd-schemas.mjs",
-    "schemas:crds:check": "node scripts/sync-crd-schemas.mjs --check",
-    "platform:validate": "node scripts/validate-platform-manifests.mjs",
+    "schemas:sync": "node scripts/sync-crd-schemas.mjs",
+    "schemas:check": "node scripts/sync-crd-schemas.mjs --check",
+    "platform:validate": "node scripts/validate-platform-manifests.mjs && node scripts/validate-platform-manifests.mjs --self-test",
     "chart:lint": "helm lint chart",
     "chart:template:staging": "helm template competitive-intelligence chart -f chart/values-staging.yaml",
     "chart:template:production": "helm template competitive-intelligence chart -f chart/values-production.yaml",
@@ -63,6 +63,7 @@
     "postcss": "^8.5.15",
     "protobufjs": "^7.6.4",
     "qs": "^6.15.2",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "fast-uri": "^3.1.4"
   }
 }
