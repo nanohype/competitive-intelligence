@@ -110,16 +110,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The CRD schemas the validator checks platform.yaml against are vendored
-      # under schemas/crd/ from the operator repo at the SHA pinned in
-      # schemas/crd/source.json. Checking that exact SHA out — rather than a
-      # branch — is what makes this gate deterministic: the schema CI validates
-      # against cannot change without a commit here that moves the pin.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - run: npm install --prefer-offline --no-audit --no-fund
+
+      # Tamper evidence, then the manifest itself. The validator hashes every
+      # vendored schema against the SHA-256 recorded in source.json before
+      # parsing it, so an edited copy — an enum widened to admit the value under
+      # review, say — aborts the run instead of being trusted. That check needs
+      # no network, so it holds on a laptop too. The second invocation is the
+      # gate's self-test: it breaks the inputs in memory, including handing the
+      # digest check a tampered schema, and fails unless every break is
+      # rejected.
+      - name: Validate platform.yaml against the CRD schemas
+        run: npm run platform:validate
+
+  crd-schema-drift:
+    name: CRD schema drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The digests in schemas/crd/source.json prove the vendored copies were
+      # not edited in place. They cannot prove the pin still describes them: a
+      # ref bumped without re-vendoring, or a re-vendor without moving the ref,
+      # leaves the digests internally consistent and upstream-wrong. This job is
+      # that half. Checking the pinned SHA out — rather than a branch — is what
+      # keeps it deterministic: the schema CI compares against cannot change
+      # without a commit here that moves the pin.
       - name: Read the pinned operator ref
         id: pin
         run: |
-          echo "repo=$(jq -r .repo schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
-          echo "ref=$(jq -r .ref schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
+          echo "repo=$(jq -r .upstream.repository schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(jq -r .upstream.ref schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout eks-agent-platform at the pinned ref
         uses: actions/checkout@v4
@@ -131,31 +158,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
 
-      - run: npm install --prefer-offline --no-audit --no-fund
-
-      # Half one of the gate: upstream drift. Compares every vendored copy
-      # byte-for-byte against the operator repo at the pinned SHA and fails on
-      # any difference, so a pin that no longer describes the committed schemas
-      # — stale, or moved by hand — surfaces here. The script also refuses to
-      # run if the checkout's HEAD is not the pinned SHA, because a comparison
-      # against some other commit is a verdict about a commit this repo never
-      # pinned. Nothing is skipped: an unreachable checkout fails the job.
-      - name: CRD schema drift check (vendored copies vs the pinned ref)
+      # Compares every vendored copy byte-for-byte against the operator repo at
+      # the pinned SHA. The script refuses to run if the checkout's HEAD is not
+      # that SHA, because a comparison against some other commit is a verdict
+      # about a commit this repo never pinned. Nothing is skipped: an
+      # unreachable checkout fails the job. Whether the pin itself has fallen
+      # behind upstream is asked by the scheduled crd-schema-freshness workflow,
+      # off the blocking path, so this check stays a pure function of the commit
+      # under test.
+      - name: Vendored CRD schemas match the pinned upstream commit
         run: npm run schemas:check
         env:
           EKS_AGENT_PLATFORM_DIR: .eks-agent-platform
-
-      # Half two: tamper evidence, then the manifest itself. The validator
-      # hashes every vendored schema against the SHA-256 recorded in
-      # source.json before parsing it, so an edited copy — an enum widened to
-      # admit the value under review, say — aborts the run instead of being
-      # trusted. That check needs no network, so it holds on a laptop too. The
-      # second invocation is the gate's self-test.
-      - name: Validate platform.yaml against the CRD schemas
-        run: npm run platform:validate
 
   docker:
     name: docker build (no push)

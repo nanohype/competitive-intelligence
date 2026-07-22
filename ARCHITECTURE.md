@@ -90,7 +90,7 @@ The MCP port defaults to open — the mcp-tunnel + NetworkPolicy are its only gu
 
 - **Not its own cloud substrate.** It does not provision Aurora, the IAM role, or Secrets Manager entries. Those are landing-zone (see Boundaries). The chart consumes their outputs.
 - **Not a model host.** Bedrock runs Claude and Titan inference outside the cluster, on-account. No self-hosted models.
-- **Not a cluster bootstrap.** The EKS cluster, ArgoCD, and the addons it depends on (External Secrets Operator, the observability stack, kube-prometheus-stack) must already exist (eks-gitops).
+- **Not a cluster bootstrap.** The EKS cluster, ArgoCD, and the addons it depends on (External Secrets Operator, the observability stack — Grafana Alloy, Loki, Tempo, kube-state-metrics, the Grafana operator) must already exist (eks-gitops). That catalog runs no rule evaluator: `prometheus-operator-crds` installs the CRDs so this chart's `PrometheusRule` applies, and nothing evaluates it, which is why the template is off by default.
 - **Not the tenant operator.** It declares a `Platform` CR; the `eks-agent-platform` operator reconciles the namespace, ResourceQuota, NetworkPolicy, and AppProject.
 - **Not the MCP tunnel.** The app is tunnel-ready — a Service on the MCP port, locked by NetworkPolicy to the `mcp-tunnel` namespace — but it does not run the tunnel. The `mcp-tunnel` addon (outbound-only `cloudflared`, WIF-authed, hostname routing) lives in `eks-gitops` and is wired per-tenant by the operator.
 - **Not a general web scraper.** It crawls a curated, Zod-validated `sources.json` of competitor pages, SSRF-guarded — not arbitrary user-supplied URLs at request time.

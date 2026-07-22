@@ -1,0 +1,33 @@
+name: crd-schema-freshness
+
+# Is the pinned eks-agent-platform commit still the newest one? Deliberately
+# NOT part of pull-request CI. The answer changes when someone pushes to another
+# repository, so as a required check it would turn red on unrelated branches
+# here and train people to ignore it; and a "behind" answer is not a defect —
+# the vendored copies still match the commit they claim, which is the property
+# `schemas:check` blocks on. This runs on a schedule instead, where a red run is
+# a notification that the operator API moved and the pin can be advanced.
+on:
+  schedule:
+    - cron: '0 13 * * 1' # Mondays, 13:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: pinned operator ref vs upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # No install step: the script uses only Node built-ins, and reads both
+      # sides from raw.githubusercontent.com — the pinned ref and the default
+      # branch. An unreachable upstream fails rather than reporting "current".
+      - name: Compare the pin against upstream
+        run: npm run schemas:freshness

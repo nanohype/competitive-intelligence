@@ -83,6 +83,11 @@ tasks:
     cmds:
       - node scripts/sync-crd-schemas.mjs --check
 
+  schemas:freshness:
+    desc: Report whether the pinned operator ref has fallen behind upstream (never a merge gate)
+    cmds:
+      - node scripts/sync-crd-schemas.mjs --freshness
+
   # === Helm ===
 
   helm:lint:

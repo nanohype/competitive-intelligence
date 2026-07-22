@@ -22,6 +22,7 @@
     "sync:vendored:check": "node scripts/sync-vendored.mjs --check",
     "schemas:sync": "node scripts/sync-crd-schemas.mjs",
     "schemas:check": "node scripts/sync-crd-schemas.mjs --check",
+    "schemas:freshness": "node scripts/sync-crd-schemas.mjs --freshness",
     "platform:validate": "node scripts/validate-platform-manifests.mjs && node scripts/validate-platform-manifests.mjs --self-test",
     "chart:lint": "helm lint chart",
     "chart:template:staging": "helm template competitive-intelligence chart -f chart/values-staging.yaml",
