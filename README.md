@@ -94,7 +94,7 @@ The AWS substrate — Aurora Serverless v2 (pgvector), the IAM role, and Secrets
 This repo owns the application — the crawler, the semantic-diff pipeline, the alert + intel engines, the MCP query surface, the outbound alert sink, and the tenant trio that deploys it. It does **not** own:
 
 - AWS substrate (Aurora/pgvector, the IAM role, Secrets Manager seeding) → the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone)
-- Cluster addons (external-secrets, the OTel collector + log forwarder, kube-prometheus-stack, the mcp-tunnel that fronts the MCP surface) → [`eks-gitops`](https://github.com/nanohype/eks-gitops)
+- Cluster addons (external-secrets, Grafana Alloy — the OTLP receiver and log shipper — Loki, Tempo, the Grafana operator, and the mcp-tunnel that fronts the MCP surface) → [`eks-gitops`](https://github.com/nanohype/eks-gitops). Alert-rule evaluation is cluster-side too and is not deployed there; see the `prometheusRule` note in [`chart/README.md`](chart/README.md)
 
 ## Configuration
 

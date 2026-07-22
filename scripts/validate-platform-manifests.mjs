@@ -230,6 +230,13 @@ async function readSourceManifest() {
   } catch (error) {
     abort(`schemas/crd/source.json is not valid JSON: ${error.message}`);
   }
+  if (!manifest.upstream?.repository || !/^[0-9a-f]{40}$/.test(manifest.upstream?.ref ?? "")) {
+    abort(
+      "schemas/crd/source.json needs `upstream.repository` and a full 40-character " +
+        "`upstream.ref` — a branch name pins nothing, and the digests below describe " +
+        "whatever commit that is",
+    );
+  }
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
     abort("schemas/crd/source.json declares no schema files");
   }
@@ -703,7 +710,7 @@ async function main() {
 
   console.log(
     `✓ ${schemaBytes.size} vendored CRD schemas match the digests in schemas/crd/source.json ` +
-      `(${sourceManifest.repo}@${sourceManifest.ref.slice(0, 12)})`,
+      `(${sourceManifest.upstream.repository}@${sourceManifest.upstream.ref.slice(0, 12)})`,
   );
   console.log(`✓ ${documents.length} documents in platform.yaml validate against schemas/crd/`);
   for (const doc of documents) {
