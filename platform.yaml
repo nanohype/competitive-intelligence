@@ -101,6 +101,10 @@ spec:
     # The pgvector store's access is generated from spec.datastores, so nothing
     # is needed here.
     extraPolicyArns: []
+    # No directSecretReads: every secret this Platform needs is projected into
+    # the pod by the chart's ExternalSecret (read by the External Secrets
+    # controller's own identity), so the tenant role holds no Secrets Manager
+    # grant of its own.
   compliance:
     soc2: true
   isolation: namespace
