@@ -14,7 +14,7 @@ The workload is a single long-lived process: a scheduler that runs one global cr
 - `templates/`
   - `deployment.yaml` — the pod. Non-root, `readOnlyRootFilesystem` with a `/tmp` emptyDir, env from `values.env` + `tenantInfra.pg*`, secrets via `envFrom: secretRef`, two containerPorts (`http` for `/health`+`/readyz`, `mcp` for the MCP server), liveness `/health` + readiness `/readyz` on the health port, `checksum/external-secret` pod-roll annotation. `replicaCount: 1` with a `Recreate` strategy — single-writer scheduler + crawl mutex, and the MCP `trigger_crawl` calls that same in-process mutex; never run two at once.
   - `service.yaml` — ClusterIP with two named ports: `http` (health, default 3000) and `mcp` (default 3001, the port the tunnel routes to)
-  - `serviceaccount.yaml` — thin `tenant-chart-base.serviceaccount` include; name pinned to `competitive-intelligence`, bound to its IAM role by the landing-zone `competitive-intelligence-platform` Pod Identity association. No role-arn annotation, no inline IAM.
+  - `serviceaccount.yaml` — thin `tenant-chart-base.serviceaccount` include; references the operator-owned `tenant-runtime` ServiceAccount (`serviceAccount.create: false`), which the operator binds to the tenant IAM role with a Pod Identity association. No role-arn annotation, no inline IAM.
   - `externalsecret.yaml` — pulls the Slack bot token + optional provider keys from `competitive-intelligence/<env>/app-secrets` and `PGUSER`/`PGPASSWORD` from `competitive-intelligence/<env>/db-credentials`
   - `networkpolicy.yaml` — thin `tenant-chart-base.networkpolicy` include; default-deny + egress allow-list (DNS, HTTPS to the open internet minus IMDS, Postgres to the VPC CIDR). Ingress: same-namespace health probes, plus the MCP port from the `mcp-tunnel` namespace only (`namespaceSelector` on `kubernetes.io/metadata.name: mcp-tunnel`) — the tunnel is the single ingress to the MCP surface
   - `prometheusrule.yaml` — alerts (crawl-failure spike, circuit-breaker open, alert-send failure, pgvector unreachable); uses the base chart's fullname/labels helpers
@@ -37,17 +37,17 @@ The chart alone is not enough to run the app. Two sibling files at the repo root
 - `../platform.yaml` — the cluster-scoped `Tenant` `strategy` plus the `BudgetPolicy` and `Platform` declaring this app as a tenant of the strategy team. The operator reconciles the `tenants-competitive-intelligence` Namespace, ResourceQuota, default-deny NetworkPolicy, ArgoCD AppProject, and the per-tenant IAM role from this CR. Apply once during initial setup.
 - `../gitops/applicationset-entry.yaml` — ApplicationSet entry registered into `nanohype/eks-gitops`. ArgoCD picks up the entry and rolls out this chart per cluster/env.
 
-## Required landing-zone component
+## Substrate (declared)
 
-Single-tenant component `components/aws/competitive-intelligence-platform/` provisions everything the pod needs:
+Everything the pod needs is declared in `platform.yaml`, not a per-app component:
 
-- Aurora Serverless v2 (PostgreSQL + pgvector at app bootstrap) — the durable vector store that survives restarts, so the first post-restart crawl diffs against real history instead of re-flooding alerts
-- IAM role with the inline policy: Bedrock `InvokeModel` for Claude Sonnet + Titan Embed v2, Secrets Manager read scoped to `competitive-intelligence/<env>/*`, CloudWatch `PutMetricData`
-- Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (the Slack bot token for the alert sink + optional provider keys) and the Aurora-managed `competitive-intelligence/<env>/db-credentials`
+- The `main` `relational` datastore — Aurora Serverless v2 (PostgreSQL + pgvector at app bootstrap), the durable vector store that survives restarts so the first post-restart crawl diffs against real history instead of re-flooding alerts. Declared in `spec.datastores` and provisioned by the generic `tenant-substrate` component.
+- The tenant IAM role — Bedrock `InvokeModel` for Claude Sonnet + Titan Embed v2 (operator model-scoping) plus the datastore-access policy the operator generates from `spec.datastores`. The operator owns it.
+- Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (the Slack bot token for the alert sink + optional provider keys), seeded out of band, and the Aurora-managed `competitive-intelligence/<env>/db-credentials`.
 
 ## Pod identity
 
-The chart's `serviceaccount.yaml` creates a ServiceAccount named `competitive-intelligence` (pinned via `serviceAccount.name`) and carries no role-arn annotation. The landing-zone `competitive-intelligence-platform` component creates an EKS Pod Identity association binding that `(namespace, service-account)` to the IAM role, so EKS injects credentials into the pod through the standard AWS credential chain — no annotation, no role ARN in the chart, no API keys. The ServiceAccount name must match the association's `service_account`, which is why it is pinned to the app name. Bedrock and every other AWS call resolve to this role on-cluster.
+The chart's `serviceaccount.yaml` references the operator-owned `tenant-runtime` ServiceAccount (`serviceAccount.create: false`) and carries no role-arn annotation. The operator creates that ServiceAccount and binds `(namespace, tenant-runtime)` to the tenant IAM role through an EKS Pod Identity association, so EKS injects credentials into the pod through the standard AWS credential chain — no annotation, no role ARN in the chart, no API keys. Bedrock and every other AWS call resolve to this role on-cluster.
 
 ## LLM
 
@@ -66,7 +66,7 @@ helm template competitive-intelligence chart -f chart/values.yaml -f chart/value
 
 This chart owns the app's k8s surface. The cloud substrate and cluster addons sit in other layers:
 
-**Substrate (`landing-zone/components/aws/competitive-intelligence-platform/`):** Aurora Serverless v2 (pgvector), the IAM role, and the seeded Secrets Manager entries. It owns the IAM role and the Pod Identity association that binds the ServiceAccount to it; `aurora_cluster_endpoint` feeds `tenantInfra.pgHost`. AWS Secrets Manager stays the source of truth; `externalsecret.yaml` syncs it into a k8s Secret via ESO.
+**Substrate (declared in `spec.datastores`, provisioned by `landing-zone`'s generic `tenant-substrate`):** the `main` Aurora Serverless v2 (pgvector) store. The operator owns the tenant IAM role and the Pod Identity association that binds `tenant-runtime` to it; the `main` datastore's endpoint feeds `tenantInfra.pgHost`. AWS Secrets Manager stays the source of truth; `externalsecret.yaml` syncs it into a k8s Secret via ESO.
 
 **Cluster addons (`eks-gitops`):** the external-secrets operator + `aws-secrets-manager` ClusterSecretStore, the Grafana Alloy OTLP receiver at `alloy.monitoring.svc.cluster.local:4318` and the grafana-operator (→ Amazon Managed Grafana). The app writes structured JSON to stderr (tailed to Loki) and exports OTLP traces + metrics + logs to Alloy, which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecars.
 

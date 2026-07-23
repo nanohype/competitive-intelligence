@@ -13,6 +13,6 @@ env:
   OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=competitive-intelligence,service.version=0.1.0,deployment.environment=staging,agents.tenant=strategy,agents.platform=competitive-intelligence'
 
 tenantInfra:
-  # Fill the empties below from the landing-zone competitive-intelligence-platform
+  # Fill the empties below from the landing-zone tenant-substrate
   # staging outputs (terragrunt output -json). Slot names match output names 1:1.
   pgHost: '' # aurora_cluster_endpoint

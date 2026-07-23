@@ -18,7 +18,7 @@ competitive-intelligence crawls external competitor websites and feeds the conte
 
 ### Identity & secrets
 
-- No long-lived credentials in the app. Pods get AWS access via **EKS Pod Identity** — the Bedrock LLM + Titan embeddings run on the AWS credential chain, which resolves to the landing-zone `competitive-intelligence-platform` role. There are no static keys anywhere in the repo or image; `config.ts` reads no `AWS_ACCESS_KEY_ID`.
+- No long-lived credentials in the app. Pods get AWS access via **EKS Pod Identity** — the Bedrock LLM + Titan embeddings run on the AWS credential chain, which resolves to the operator-reconciled tenant role (bound to the operator-owned `tenant-runtime` ServiceAccount). There are no static keys anywhere in the repo or image; `config.ts` reads no `AWS_ACCESS_KEY_ID`.
 - App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets Manager (`competitive-intelligence/<env>/*`) into a Kubernetes Secret, consumed via `envFrom` — never committed. The Slack bot token (outbound alert sink) and optional Anthropic/OpenAI keys come from `competitive-intelligence/<env>/app-secrets`; Postgres credentials come from the Aurora-managed `competitive-intelligence/<env>/db-credentials`.
 - The optional Anthropic/OpenAI direct-API providers are off by default. Bedrock (on-account, EKS Pod Identity, no key) is the default for both LLM and embeddings.
 

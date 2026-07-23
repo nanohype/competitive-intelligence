@@ -51,7 +51,7 @@ spec:
               value: {{ $v | quote }}
             {{- end }}
             # Aurora pgvector connection — fed by per-env Helm values from the
-            # landing-zone competitive-intelligence-platform component's outputs.
+            # landing-zone tenant-substrate component's outputs.
             # The `pg` driver reads PGHOST/PGPORT/PGDATABASE natively; PGUSER and
             # PGPASSWORD arrive via the ExternalSecret (envFrom below). Empty base
             # values are the local-dev fallback (VECTOR_PROVIDER=memory).

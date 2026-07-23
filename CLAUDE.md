@@ -144,7 +144,7 @@ When adding tests: mock providers by implementing the interface directly (`LlmPr
 
 Ships as the `competitive-intelligence` Platform tenant. No in-repo IaC and no manual rollout — ArgoCD reconciles the chart from git.
 
-1. **Substrate** — `landing-zone/components/aws/competitive-intelligence-platform/` provisions Aurora Serverless v2 (pgvector), the IAM role, and Secrets Manager entries. It owns the IAM role and the EKS Pod Identity association binding the ServiceAccount to it; the Aurora endpoint feeds `tenantInfra.*`.
+1. **Substrate** — the `main` `relational` datastore (Aurora Serverless v2, pgvector) is declared in `platform.yaml` (`spec.datastores`) and provisioned by the generic `tenant-substrate` component. The operator generates the datastore-access policy and binds the operator-owned `tenant-runtime` ServiceAccount to the tenant role via a Pod Identity association; the Aurora endpoint feeds `tenantInfra.*`. App secrets are seeded to Secrets Manager out of band.
 2. **Platform CR** — `kubectl apply -f platform.yaml` once. It carries three documents: the cluster-scoped `Tenant` `strategy`, plus the `BudgetPolicy` and `Platform` authored in the `tenants-strategy` team namespace. The operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, default-deny NetworkPolicy, the ArgoCD AppProject, and the tenant IAM role. Wait for `Ready`.
 3. **GitOps** — `gitops/applicationset-entry.yaml` is registered in `nanohype/eks-gitops`. ArgoCD renders the chart per env and rolls out the Deployment. New image tags flow through the release workflow → GHCR → ArgoCD.
 

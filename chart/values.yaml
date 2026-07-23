@@ -26,13 +26,12 @@ service:
   mcpTargetPort: 3001
 
 serviceAccount:
-  create: true
-  # Pinned to the app name so it matches the service_account of the EKS Pod
-  # Identity association landing-zone's competitive-intelligence-platform
-  # component creates — that association binds this ServiceAccount to its IAM
-  # role, so the pod needs no role-arn annotation and the chart carries no AWS
-  # account values.
-  name: competitive-intelligence
+  # The operator creates and owns the `tenant-runtime` ServiceAccount and binds
+  # it to the per-Platform IAM role via an EKS Pod Identity association, so the
+  # pod runs as it with no role-arn annotation and the chart carries no AWS
+  # account values. The chart references that SA rather than minting its own.
+  create: false
+  name: tenant-runtime
   # Free-form additional annotations merged into the ServiceAccount.
   annotations: {}
 
@@ -96,7 +95,7 @@ externalSecret:
   # provider keys live here.
   remoteRefSecret: '' # set per-env (competitive-intelligence/<env>/app-secrets)
   # Aurora master credentials secret name (provisioned by the landing-zone
-  # competitive-intelligence-platform component).
+  # tenant-substrate component).
   dbCredentialsSecret: '' # set per-env (competitive-intelligence/<env>/db-credentials)
 
 prometheusRule:
@@ -204,7 +203,7 @@ env:
   EMBEDDING_DIMENSIONS: '1024'
   # Durable vector store — survives restarts so the first post-restart crawl
   # diffs against real history instead of re-flooding alerts. Backed by the
-  # landing-zone competitive-intelligence-platform Aurora pgvector cluster.
+  # landing-zone tenant-substrate Aurora pgvector cluster.
   VECTOR_PROVIDER: pgvector
   CRAWL_INTERVAL_MINUTES: '60'
   SIGNIFICANCE_THRESHOLD: '0.3'
@@ -255,16 +254,16 @@ env:
   OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=competitive-intelligence,service.version=0.1.0,agents.tenant=strategy,agents.platform=competitive-intelligence'
 
 # Per-tenant infrastructure references — populated by per-env values from the
-# landing-zone competitive-intelligence-platform component's outputs. Empty at
+# landing-zone tenant-substrate component's outputs. Empty at
 # the chart level for local dev (where the vector store may run in `memory`
 # mode against a kind-side stub).
 tenantInfra:
-  # Aurora Serverless v2 (pgvector) endpoint — competitive-intelligence-platform:
+  # Aurora Serverless v2 (pgvector) endpoint — tenant-substrate:
   # module.aurora.cluster_endpoint (output: aurora_cluster_endpoint).
   pgHost: ''
-  # competitive-intelligence-platform output: aurora_cluster_port.
+  # tenant-substrate output: aurora_cluster_port.
   pgPort: '5432'
-  # competitive-intelligence-platform: database_name.
+  # tenant-substrate: database_name.
   pgDatabase: competitive_intelligence
 
 nodeSelector: {}

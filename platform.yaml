@@ -26,21 +26,16 @@
 #     bind via Pod Identity associations (`tenant-runtime` by the operator,
 #     the app SA by landing-zone)
 #
-# What this chart owns separately (NOT operator-reconciled):
-#     The chart's own ServiceAccount (`competitive-intelligence`) is bound to
-#     the operator-reconciled `<env>-competitive-intelligence-tenant` role by
-#     an EKS Pod Identity association the landing-zone
-#     competitive-intelligence-platform component creates — no role-arn
-#     annotation. App pods and AgentFleet pods (`tenant-runtime` SA) share
-#     that role: one Platform, one privilege domain. Bedrock access on the
-#     role is the agent-iam baseline clamped to spec.identity below; the
-#     app's substrate grants arrive via spec.identity.extraPolicyArns.
+# Pod identity: the operator creates and owns the `tenant-runtime` ServiceAccount
+# and binds it to the `<env>-competitive-intelligence-tenant` role via an EKS Pod
+# Identity association — no role-arn annotation. Both the radar's worker pod and
+# any AgentFleet pods run as it: one Platform, one privilege domain. Bedrock
+# access is the agent-iam baseline clamped to spec.identity below; the substrate
+# grant is the datastore-access policy the operator generates from spec.datastores.
 #
-# Tenant substrate (Aurora pgvector, Secrets Manager seeding, the app-access
-# managed policy) lives in landing-zone's
-# components/aws/competitive-intelligence-platform/.
-# Once that component's per-env entry applies, its outputs wire into the chart's
-# per-env values (`tenantInfra.*`).
+# Tenant substrate is declared, not a component: spec.datastores below names the
+# pgvector store, and the generic tenant-substrate module provisions it. Its
+# endpoint wires into the chart's per-env values (`tenantInfra.*`) at deploy time.
 
 ---
 apiVersion: platform.nanohype.dev/v1alpha1
@@ -102,13 +97,17 @@ spec:
       - us.anthropic.claude-sonnet-4-20250514-v1:0 # BEDROCK_LLM_MODEL — diff analysis (Converse)
       - us.anthropic.claude-sonnet-4-6 # Sonnet 4.6 — convergence target for BEDROCK_LLM_MODEL
       - amazon.titan-embed-text-v2:0 # BEDROCK_EMBEDDING_MODEL — chunk embeddings
-    # The app's substrate grants (Secrets Manager, CloudWatch) —
-    # landing-zone's competitive-intelligence-platform component emits the
-    # policy as `app_access_policy_arn`. Account-scoped, so it is filled per
-    # environment at apply time (landing-zone
-    # docs/first-deploy-aws.md, App platform tenants):
-    #   arn:aws:iam::<account>:policy/eks-agent-platform/competitive-intelligence-<env>-app-access
+    # Escape hatch for grants outside the datastore + capability vocabularies.
+    # The pgvector store's access is generated from spec.datastores, so nothing
+    # is needed here.
     extraPolicyArns: []
   compliance:
     soc2: true
   isolation: namespace
+  # Stateful substrate: the durable pgvector store (Aurora Serverless v2). The
+  # tenant-substrate module provisions it and the operator generates the scoped
+  # datastore-access policy; deletionPolicy defaults to Retain, so deleting this
+  # CR orphans the database intact.
+  datastores:
+    - name: main
+      kind: relational

@@ -87,13 +87,13 @@ Ships as a [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform
 - **`platform.yaml`** — three CRs declaring the tenant boundary: the cluster-scoped `Tenant` `strategy` (the owning team as an organizational boundary), and the `BudgetPolicy` + `Platform` that reference it, both authored in the team's `tenants-strategy` control-plane namespace with `tenant: strategy`. From the Platform the operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota and NetworkPolicy, and the ArgoCD AppProject `competitive-intelligence` — all named after the Platform, not the team.
 - **`gitops/applicationset-entry.yaml`** — the ApplicationSet entry registered into [`nanohype/eks-gitops`](https://github.com/nanohype/eks-gitops) for ArgoCD reconciliation.
 
-The AWS substrate — Aurora Serverless v2 (pgvector), the IAM role, and Secrets Manager seeding — is provisioned by the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). It binds the role to the chart's ServiceAccount with an EKS Pod Identity association; the Aurora endpoint feeds `tenantInfra.*`. Apply `platform.yaml` once, wait for `Ready`, then ArgoCD owns the rollout: bump `image.tag` in the per-env values, commit, push.
+The AWS substrate — the Aurora Serverless v2 (pgvector) store — is declared in `platform.yaml` (`spec.datastores`) and provisioned by the generic `tenant-substrate` component in [`landing-zone`](https://github.com/nanohype/landing-zone); the operator generates the scoped datastore-access IAM policy and binds the `tenant-runtime` ServiceAccount to the tenant role with an EKS Pod Identity association. The Aurora endpoint feeds `tenantInfra.*`. Apply `platform.yaml` once, wait for `Ready`, then ArgoCD owns the rollout: bump `image.tag` in the per-env values, commit, push.
 
 ## Boundaries
 
 This repo owns the application — the crawler, the semantic-diff pipeline, the alert + intel engines, the MCP query surface, the outbound alert sink, and the tenant trio that deploys it. It does **not** own:
 
-- AWS substrate (Aurora/pgvector, the IAM role, Secrets Manager seeding) → the `competitive-intelligence-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone)
+- AWS substrate (the Aurora/pgvector store, declared in `spec.datastores`) → the generic `tenant-substrate` component in [`landing-zone`](https://github.com/nanohype/landing-zone); the tenant IAM is operator-generated
 - Cluster addons (external-secrets, Grafana Alloy — the OTLP receiver and log shipper — Loki, Tempo, the Grafana operator, and the mcp-tunnel that fronts the MCP surface) → [`eks-gitops`](https://github.com/nanohype/eks-gitops). Alert-rule evaluation is cluster-side too and is not deployed there; see the `prometheusRule` note in [`chart/README.md`](chart/README.md)
 
 ## Configuration
