@@ -92,12 +92,15 @@ spec:
       - us.anthropic.claude-sonnet-4-20250514-v1:0
       - us.anthropic.claude-sonnet-4-6
       - amazon.titan-embed-text-v2:0
-    extraPolicyArns: [] # filled per env with the landing-zone app-access policy
+    extraPolicyArns: [] # escape hatch; substrate access is operator-generated
   compliance: { soc2: true }
   isolation: namespace
+  datastores:
+    - name: main
+      kind: relational # Aurora Serverless v2 (pgvector) — the durable vector store
 ```
 
-The `Tenant` is cluster-scoped — it is the strategy team as an organizational boundary, and `Platform.spec.tenant` references it by name. The `BudgetPolicy` and `Platform` live in `tenants-strategy`, the strategy team's control-plane namespace. From `Platform.metadata.name` the operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject `competitive-intelligence`, and the `<env>-competitive-intelligence-tenant` IAM role with Bedrock invoke clamped to `spec.identity.allowedModels`. App pods and AgentFleet pods share that one role — the chart's ServiceAccount binds to it through the EKS Pod Identity association the landing-zone `competitive-intelligence-platform` component creates (no role-arn annotation), and the app's substrate grants reach it as an `extraPolicyArns` entry filled per environment at apply time.
+The `Tenant` is cluster-scoped — it is the strategy team as an organizational boundary, and `Platform.spec.tenant` references it by name. The `BudgetPolicy` and `Platform` live in `tenants-strategy`, the strategy team's control-plane namespace. From `Platform.metadata.name` the operator reconciles the workload namespace `tenants-competitive-intelligence`, its ResourceQuota, LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject `competitive-intelligence`, and the `<env>-competitive-intelligence-tenant` IAM role with Bedrock invoke clamped to `spec.identity.allowedModels`. App pods and AgentFleet pods share that one role — the operator creates and owns the `tenant-runtime` ServiceAccount and binds it to the role through an EKS Pod Identity association (no role-arn annotation), and the substrate grant is the datastore-access policy the operator generates from `spec.datastores`.
 
 Two tokens, two scopes: `spec.tenant` is the owning team (`strategy`) and drives labels, tags, and OTel attributes; `metadata.name` is the app (`competitive-intelligence`) and drives the workload namespace, the AppProject, and the tenant IAM role name.
 
@@ -183,4 +186,4 @@ The vector store is the durability seam. `VectorStore` (`src/providers/vectors.t
 - [`chart/README.md`](chart/README.md) — template-by-template chart reference + the per-tenant infra it expects
 - [Platform Reference](https://github.com/nanohype/nanohype/blob/main/docs/platform-reference.md) — the stack-wide view
 - [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) — the operator that reconciles the Platform CR
-- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `competitive-intelligence-platform` substrate (Aurora pgvector + IAM + Secrets Manager) the chart's IAM role and data store live in
+- [`landing-zone`](https://github.com/nanohype/landing-zone) — the generic `tenant-substrate` component that provisions the tenant's declared datastores (the Aurora pgvector store), plus `agent-iam` for the operator's IAM substrate

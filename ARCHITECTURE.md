@@ -27,7 +27,7 @@ A page is "changed" when its content is **semantically** new, not when its bytes
 
 ### Durable pgvector for restart-safety, with a cold-start baseline guard
 
-History has to survive the pod. The default vector backend is `PgVectorStore` against the landing-zone `competitive-intelligence-platform` Aurora Serverless v2 (pgvector) — a `vector(N)` column with a cosine-distance index, the `vector` extension and table DDL created by the app at bootstrap. Aurora supplies the engine; the app owns the schema. Because the baseline persists, the first crawl after a restart, rollout, or node drain diffs against real history and produces real (usually empty) diffs — not a flood of "everything is new."
+History has to survive the pod. The default vector backend is `PgVectorStore` against the tenant's declared `relational` datastore — Aurora Serverless v2 (pgvector), provisioned by `tenant-substrate` from `spec.datastores` — a `vector(N)` column with a cosine-distance index, the `vector` extension and table DDL created by the app at bootstrap. Aurora supplies the engine; the app owns the schema. Because the baseline persists, the first crawl after a restart, rollout, or node drain diffs against real history and produces real (usually empty) diffs — not a flood of "everything is new."
 
 The belt-and-suspenders is a **cold-start baseline guard** in the pipeline: when a source's stored `count()` is zero on a crawl, that crawl is treated as baseline seeding — the content is ingested and embedded but no alert fires for that source. That covers the genuine first-ever deploy and any future backend that starts empty, where there's no history to diff against and "everything is new" is an artifact of an empty store rather than a real signal. `MemoryVectorStore` stays available for local dev and tests (it just loses history on restart, which is fine off-cluster).
 
@@ -101,13 +101,13 @@ This repo owns the application — source, chart, Platform CR, gitops entry. Eve
 
 ### Substrate → `landing-zone`
 
-`landing-zone/components/aws/competitive-intelligence-platform/` provisions the per-tenant AWS data plane and does not move here:
+The per-tenant AWS data plane is declared in `platform.yaml` and does not move here:
 
-- Aurora Serverless v2 PostgreSQL with pgvector (the durable vector store)
-- The IAM role the app pods assume — `bedrock:InvokeModel` on the Sonnet inference profile + Titan Embed v2, `secretsmanager:GetSecretValue` scoped to `competitive-intelligence/<env>/*`
-- Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (the Slack bot token for the alert sink + optional provider keys) and the Aurora-managed `competitive-intelligence/<env>/db-credentials`
+- The `main` `relational` datastore — Aurora Serverless v2 PostgreSQL with pgvector (the durable vector store) — declared in `spec.datastores` and provisioned by the generic `tenant-substrate` component.
+- The tenant IAM role — `bedrock:InvokeModel` on the Sonnet inference profile + Titan Embed v2 (operator model-scoping), plus the datastore-access policy the operator generates from `spec.datastores` (the RDS-managed `secretsmanager:GetSecretValue` on the Aurora master secret).
+- Secrets Manager entries: `competitive-intelligence/<env>/app-secrets` (the Slack bot token for the alert sink + optional provider keys), seeded out of band, and the Aurora-managed `competitive-intelligence/<env>/db-credentials`.
 
-Its IAM role is the role the app pods assume, bound to the chart's ServiceAccount by an EKS Pod Identity association; the Aurora endpoint feeds `tenantInfra.pgHost/pgPort/pgDatabase`. The chart contains **no inline IAM**; the role and the association are owned in landing-zone and consumed by reference.
+The tenant role is the role the app pods assume, bound to the operator-owned `tenant-runtime` ServiceAccount by an EKS Pod Identity association; the Aurora endpoint feeds `tenantInfra.pgHost/pgPort/pgDatabase`. The chart contains **no inline IAM**; the role and the association are operator-owned and consumed by reference.
 
 ### Cluster addons → `eks-gitops`
 

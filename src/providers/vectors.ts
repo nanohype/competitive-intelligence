@@ -119,9 +119,9 @@ function matchesFilter(metadata: Record<string, string>, filter: Record<string, 
 
 // ─── pgvector (durable) ───
 // Survives restarts so the first post-restart crawl diffs against real
-// history instead of re-flooding alerts. Backed by Aurora Serverless v2
-// (pgvector) in the landing-zone competitive-intelligence-platform
-// component; the app owns the extension + schema, the engine just runs it.
+// history instead of re-flooding alerts. Backed by the tenant's declared
+// `main` relational datastore — Aurora Serverless v2 (pgvector), provisioned by
+// tenant-substrate; the app owns the extension + schema, the engine just runs it.
 //
 // `PgQueryPort` is a narrow subset of `pg.Pool` — a `query(text, values)`
 // returning `{ rows, rowCount }`. The real `pg.Pool` satisfies it directly;
