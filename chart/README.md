@@ -68,24 +68,24 @@ This chart owns the app's k8s surface. The cloud substrate and cluster addons si
 
 **Substrate (declared in `spec.datastores`, provisioned by `landing-zone`'s generic `tenant-substrate`):** the `main` Aurora Serverless v2 (pgvector) store. The operator owns the tenant IAM role and the Pod Identity association that binds `tenant-runtime` to it; the `main` datastore's endpoint feeds `tenantInfra.pgHost`. AWS Secrets Manager stays the source of truth; `externalsecret.yaml` syncs it into a k8s Secret via ESO.
 
-**Cluster addons (`eks-gitops`):** the external-secrets operator + `aws-secrets-manager` ClusterSecretStore, the Grafana Alloy OTLP receiver at `alloy.monitoring.svc.cluster.local:4318` and the grafana-operator (→ Amazon Managed Grafana). The app writes structured JSON to stderr (tailed to Loki) and exports OTLP traces + metrics + logs to Alloy, which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecars.
+**Cluster addons (`eks-gitops`):** the external-secrets operator + `aws-secrets-manager` ClusterSecretStore, the OpenTelemetry Collector gateway at `telemetry.monitoring.svc.cluster.local:4318` and the grafana-operator (→ Amazon Managed Grafana). The app writes structured JSON to stderr (tailed to Loki) and exports OTLP traces + metrics + logs to the collector gateway, which forwards traces → Tempo, metrics → AMP, logs → Loki. No per-pod sidecars.
 
 **This chart:** the worker `Deployment`, the default-deny `networkpolicy.yaml`, the `externalsecret.yaml`, plus the observability that ships here rather than in eks-gitops:
 
-- `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alert rules. **Nothing routes these on an EKS cluster, and the template is off by default there.** eks-gitops runs a managed metrics stack — Grafana Alloy receives OTLP and remote-writes to Amazon Managed Prometheus — with no kube-prometheus-stack and no Alertmanager, so no ruler evaluates a `PrometheusRule`. The CR still applies cleanly (`prometheus-operator-crds` is a bootstrap addon, so the kind exists), it is simply inert. Two places the rules do fire: the local `kx` cluster, which installs kube-prometheus-stack and has an in-cluster ruler — set `prometheusRule.enabled: true` there — and any other cluster running a Prometheus Operator. The production equivalent is a Grafana-managed alert rule evaluated by Amazon Managed Grafana against AMP, the same shape as `eks-gitops/dashboards/base/alerting/`.
+- `prometheusrule.yaml` — crawl-failure, circuit-breaker-open, alert-send-failure, and pgvector-unreachable alert rules. **Nothing routes these on an EKS cluster, and the template is off by default there.** eks-gitops runs a managed metrics stack — the OpenTelemetry Collector receives OTLP and remote-writes to Amazon Managed Prometheus — with no kube-prometheus-stack and no Alertmanager, so no ruler evaluates a `PrometheusRule`. The CR still applies cleanly (`prometheus-operator-crds` is a bootstrap addon, so the kind exists), it is simply inert. Two places the rules do fire: the local `kx` cluster, which installs kube-prometheus-stack and has an in-cluster ruler — set `prometheusRule.enabled: true` there — and any other cluster running a Prometheus Operator. The production equivalent is a Grafana-managed alert rule evaluated by Amazon Managed Grafana against AMP, the same shape as `eks-gitops/dashboards/base/alerting/`.
 - `grafana-dashboard.yaml` — a `GrafanaDashboard` CR loading the dashboard from `chart/dashboards/competitive-intelligence.json`; the grafana-operator reconciles it onto the external Amazon Managed Grafana.
 
 > **Collector requirement (eks-gitops).** Metrics leave the pod as OTLP to the
-> Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`), whose OTLP
+> OpenTelemetry Collector (`telemetry.monitoring.svc.cluster.local:4318`), whose OTLP
 > receiver hands them to a Prometheus exporter and a SigV4-signed `remote_write`
 > into the cluster's Amazon Managed Service for Prometheus workspace. The
 > `competitive_intelligence_*` series name needs nothing from the collector — the
 > meter self-prefixes with the service namespace, and the OTLP→Prometheus
 > translation supplies the `_total` / `_bucket` suffixes. The
 > `deployment_environment` label the dashboard filters on is a different story:
-> resource attributes only become metric labels when Alloy's
+> resource attributes only become metric labels when the collector's
 > `otelcol.exporter.prometheus` sets `resource_to_telemetry_conversion` (off by
 > default, in which case they land on `target_info` instead). If panels read
-> empty, check that exporter config in `eks-gitops/addons/observability/alloy`
+> empty, check that exporter config in `eks-gitops/addons/observability/otel-gateway`
 > first. The pod also needs egress to the collector on tcp/4318
 > (`networkPolicy.egress`, already included here).

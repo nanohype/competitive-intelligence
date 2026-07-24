@@ -2,15 +2,15 @@
 # Alert rules for the competitive-intelligence radar. Metric names target the
 # OTel-exported metrics as they arrive in Amazon Managed Service for Prometheus
 # (AMP) — the app emits via its OTel metrics surface (counters + histograms over
-# @opentelemetry/api) to the cluster-level Grafana Alloy collector, whose OTLP
+# @opentelemetry/api) to the cluster-level OpenTelemetry Collector, whose OTLP
 # receiver feeds a Prometheus exporter and a SigV4-signed remote_write into the
 # cluster's AMP workspace. The `competitive_intelligence_` prefix is part of the
 # instrument names themselves (see src/vendor/runtime/metrics.ts — the meter
 # self-prefixes with the service namespace), so the series name survives the
 # OTLP→Prometheus translation without any collector-side rewrite; that
 # translation is also what lowercases dots to underscores and appends `_total`
-# to counters and `_bucket` to histograms. The Alloy config lives in eks-gitops
-# (addons/observability/alloy) — see chart/README.md § observability.
+# to counters and `_bucket` to histograms. The collector config lives in eks-gitops
+# (addons/observability/otel-gateway) — see chart/README.md § observability.
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
