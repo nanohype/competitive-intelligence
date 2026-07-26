@@ -3,6 +3,15 @@ import "dotenv/config";
 
 const logLevelSchema = z.enum(["debug", "info", "warn", "error"]).default("info");
 
+/**
+ * Default model ids, exported so the eval tier scores the model this app
+ * actually runs. A second literal over in evals/ would drift the moment one
+ * side is bumped, and the eval would quietly start measuring something the
+ * radar never uses.
+ */
+export const DEFAULT_BEDROCK_LLM_MODEL = "us.anthropic.claude-sonnet-5";
+export const DEFAULT_ANTHROPIC_LLM_MODEL = "claude-sonnet-5";
+
 const schema = z
   .object({
     llmProvider: z.enum(["bedrock", "anthropic", "openai"]).default("bedrock"),
@@ -11,12 +20,12 @@ const schema = z
     openaiApiKey: z.string().optional(),
 
     awsRegion: z.string().default("us-east-1"),
-    bedrockLlmModel: z.string().default("us.anthropic.claude-sonnet-4-20250514-v1:0"),
+    bedrockLlmModel: z.string().default(DEFAULT_BEDROCK_LLM_MODEL),
     bedrockEmbeddingModel: z.string().default("amazon.titan-embed-text-v2:0"),
 
     // Direct-API model IDs for the non-Bedrock providers (injectable, not
     // hardcoded). Anthropic-direct uses the bare current Sonnet alias.
-    anthropicLlmModel: z.string().default("claude-sonnet-4-6"),
+    anthropicLlmModel: z.string().default(DEFAULT_ANTHROPIC_LLM_MODEL),
     openaiLlmModel: z.string().default("gpt-4o"),
 
     embeddingModel: z.string().default("text-embedding-3-small"),
