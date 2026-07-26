@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { DiffResult } from "../pipeline/differ.js";
 import type { LlmProvider } from "../providers/llm.js";
 import type { SearchResult } from "../providers/vectors.js";
+import { fenceUntrusted, normalizeDelimiters } from "../vendor/runtime/guardrails.js";
 
 export interface ChangeAnalysis {
   sourceId: string;
@@ -43,12 +44,21 @@ export function stripCodeFences(text: string): string {
 export async function analyzeChanges(diff: DiffResult, llm: LlmProvider): Promise<ChangeAnalysis> {
   const newContent = diff.newChunks.map((c) => c.text).join("\n---\n");
 
+  // The crawled page is the least trustworthy input in this system. It is a
+  // competitor's own website — someone who can notice they are being crawled
+  // and serve whatever they like to the crawler. Concatenating it raw would
+  // put their text in the same channel as the analyst instructions above it,
+  // with nothing marking where one ends and the other begins.
+  //
+  // Fencing does not make the model refuse; it gives it what it needs to.
+  // evals/analysis.eval.ts measures whether it actually does, on these
+  // prompts, against a real model.
   const prompt = `Competitor: ${diff.competitor}
 Source: ${diff.sourceId}
 Change score: ${diff.changeScore.toFixed(2)} (${diff.newChunks.length} new chunks out of ${diff.totalChunks})
 
 New content detected:
-${newContent.slice(0, 8000)}`;
+${fenceUntrusted(newContent.slice(0, 8000), "crawled page content")}`;
 
   const response = await llm.chat(ANALYSIS_SYSTEM, prompt);
 
@@ -101,10 +111,25 @@ export async function answerQuery(
     )
     .join("\n\n");
 
-  const prompt = `Question: ${question}
+  // Retrieval is the injection channel people forget. Every chunk here came
+  // from a crawled competitor page, so a page written to be retrieved gets
+  // its text into this prompt on someone else's question — the attacker never
+  // has to be the caller.
+  //
+  // The whole block is fenced as one span, provenance headers included. That
+  // means a chunk can forge a `[2] (othercorp — pricing)` line and mislabel
+  // itself, which is acceptable here precisely because everything inside the
+  // fence is data: the headers are navigational, not authority. Fencing each
+  // chunk separately would put the labels outside, and is the shape to reach
+  // for if provenance ever becomes load-bearing.
+  //
+  // The question is not fenced: it IS the task, and wrapping it in "treat as
+  // data" would be nonsense. It is delimiter-normalized instead, so a
+  // question containing `<system>` can't restructure the prompt around it.
+  const prompt = `Question: ${normalizeDelimiters(question)}
 
 Retrieved intelligence (${context.length} sources):
-${contextText}`;
+${fenceUntrusted(contextText, "retrieved source content")}`;
 
   const response = await llm.chat(QUERY_SYSTEM, prompt);
   return response.text;

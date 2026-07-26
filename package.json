@@ -1,7 +1,7 @@
 {
   "name": "competitive-intelligence",
   "version": "0.1.0",
-  "description": "Competitive intelligence radar — detect signals before they become headlines",
+  "description": "Competitive intelligence radar \u2014 detect signals before they become headlines",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -12,6 +12,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval": "vitest run --config vitest.eval.config.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",

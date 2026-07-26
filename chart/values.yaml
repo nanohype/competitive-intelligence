@@ -198,7 +198,7 @@ env:
   # us.anthropic.*-v1:0 profile form, not a bare alias). Matches the config.ts
   # default. Verify the profile exists in the deploy region before promoting and
   # bump to the current Sonnet snapshot when rolling regions.
-  BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-4-20250514-v1:0
+  BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-5
   BEDROCK_EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
   EMBEDDING_DIMENSIONS: '1024'
   # Durable vector store — survives restarts so the first post-restart crawl
