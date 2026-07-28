@@ -87,15 +87,19 @@ spec:
   identity:
     # Bedrock model access for every pod in this Platform — the radar's
     # worker pod and AgentFleet pods share the operator-reconciled
-    # `<env>-competitive-intelligence-tenant` role. The operator clamps
-    # Bedrock invoke on that role to exactly these IDs
-    # (bedrock-model-scoping inline policy over the baseline grant). Both
-    # Sonnet generations are declared: the config default invokes Sonnet 4
-    # (BEDROCK_LLM_MODEL), Sonnet 4.6 is the target the values will converge
-    # on — dropping either is a spec edit once the config settles on one.
+    # `<env>-competitive-intelligence-tenant` role.
+    #
+    # This is not an additive allow. The operator writes a
+    # `DenyUnscopedBedrockInvoke` statement — Effect: Deny, NotResource: the
+    # expansion of this list — so a model absent here is explicitly denied and
+    # no baseline grant can rescue it. A list that disagrees with what the chart
+    # renders is not a degraded mode; it is AccessDenied on every call.
+    #
+    # So this list must cover every model id the chart sets, and
+    # `npm run platform:validate` fails when it does not. Adding a model is a
+    # deliberate widening of what this tenant may spend on.
     allowedModels:
-      - us.anthropic.claude-sonnet-4-20250514-v1:0 # BEDROCK_LLM_MODEL — diff analysis (Converse)
-      - us.anthropic.claude-sonnet-4-6 # Sonnet 4.6 — convergence target for BEDROCK_LLM_MODEL
+      - us.anthropic.claude-sonnet-5 # BEDROCK_LLM_MODEL — diff analysis (Converse)
       - amazon.titan-embed-text-v2:0 # BEDROCK_EMBEDDING_MODEL — chunk embeddings
     # Escape hatch for grants outside the datastore + capability vocabularies.
     # The pgvector store's access is generated from spec.datastores, so nothing
