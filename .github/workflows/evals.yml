@@ -1,31 +1,22 @@
 name: evals
 
-# The model tier, on its own workflow so it reports as its own check. Folding
-# it into `ci` would let "tests passed" and "evals passed" arrive as one
-# signal, and they are not one signal — the eval measures a model, needs
-# credentials, and costs money per run.
+# The model tier, on its own workflow so it reports as its own check. Folding it
+# into `ci` would let "tests passed" and "evals passed" arrive as one signal, and
+# they are not one signal - the eval measures a model, needs credentials, and
+# costs money per run.
 #
-# Triggered only by changes that can move a score: the prompts, the fence
-# between untrusted page content and those prompts, and the golden set itself.
-# Everything else in the repo is covered by `ci`.
+# Manual only. There is no schedule and no pull_request/push trigger, which means
+# there is no job condition either: dispatching the run IS the opt-in. That
+# removes a whole failure class - a condition that silently skips while a comment
+# claims otherwise, or a cron that goes red in a corner nobody reads. Run this
+# before trusting a model change (a new pin, a prompt edit, a provider
+# deprecation), which is when the answer actually matters. The offline tier in
+# `ci` still covers fixture validity and the graders on every PR, fork or not.
+#
+# The eval role trusts `repo:<owner>/<name>:ref:refs/heads/main` and nothing else,
+# so dispatch from main. A branch or fork cannot assume it - deliberately, because
+# this identity can spend on metered inference.
 on:
-  pull_request:
-    paths:
-      - 'src/intel/**'
-      - 'src/vendor/runtime/guardrails.ts'
-      - 'evals/**'
-      - '.github/workflows/evals.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'src/intel/**'
-      - 'src/vendor/runtime/guardrails.ts'
-      - 'evals/**'
-  # Prompts do not change but models do. A scheduled run catches a provider
-  # rolling a model version underneath us, which is otherwise invisible until
-  # someone happens to edit a prompt.
-  schedule:
-    - cron: '17 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -40,11 +31,6 @@ jobs:
   eval:
     name: analyzeChanges golden set
     runs-on: ubuntu-latest
-    # No credentials, no run — and the check reports Skipped, not green.
-    # A fork PR lands here, which is correct: the golden set is public, the
-    # Bedrock account is not. The offline tier in `ci` still covers fixture
-    # validity and the graders on every PR, fork or not.
-    if: ${{ github.event_name == 'schedule' || vars.EVALS_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
