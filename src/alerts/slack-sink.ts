@@ -15,8 +15,22 @@ const SLACK_TIMEOUT_MS = 10_000;
  * call so a degraded Slack endpoint fails fast instead of stalling the crawl
  * loop on every diff.
  */
-export function createSlackSink(botToken: string): AlertSink {
-  const client = new WebClient(botToken, { timeout: SLACK_TIMEOUT_MS });
+/**
+ * The one call this sink makes. Narrowing to it keeps the injectable seam
+ * honest: a test supplies a `chat.postMessage`, not a stand-in for the whole
+ * `@slack/web-api` surface.
+ */
+export interface SlackPoster {
+  chat: {
+    postMessage(args: { channel: string; text: string; blocks: KnownBlock[] }): Promise<unknown>;
+  };
+}
+
+export function createSlackSink(botToken: string, poster?: SlackPoster): AlertSink {
+  // `poster` is the test seam; production leaves it unset and gets the real
+  // client. Injecting the client rather than module-mocking `@slack/web-api`
+  // keeps the breaker wiring under test instead of asserting a mock was called.
+  const client: SlackPoster = poster ?? new WebClient(botToken, { timeout: SLACK_TIMEOUT_MS });
   const breaker = createBreaker("slack-alerts", { failureThreshold: 3 });
 
   return {

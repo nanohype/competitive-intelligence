@@ -1,69 +1,17 @@
-import http from "node:http";
 import { type AlertSink, createAlertEngine } from "./alerts/index.js";
 import { createSlackSink } from "./alerts/slack-sink.js";
 import { loadConfig } from "./config.js";
-import { crawlAll } from "./crawler/index.js";
+import { createCrawlRunner } from "./crawl-runner.js";
 import { loadSourcesFromFile } from "./crawler/sources.js";
+import { createHealthServer } from "./health.js";
 import { createIntelEngine } from "./intel/index.js";
 import { logger, setLogLevel, toMessage } from "./logger.js";
-import { createOAuthProtection, type OAuthProtection } from "./mcp/oauth.js";
+import { createOAuthProtection, type OAuthProtection, parseScopes } from "./mcp/oauth.js";
 import { createMcpHttpServer } from "./mcp/server.js";
-import { recordCrawlDuration } from "./metrics.js";
-import { ingestAndDiff } from "./pipeline/index.js";
 import { bootstrapEmbeddings } from "./providers/embeddings.js";
 import { bootstrapLlm } from "./providers/llm.js";
-import { bootstrapVectorStore, type VectorStore } from "./providers/vectors.js";
+import { bootstrapVectorStore } from "./providers/vectors.js";
 import { createScheduler } from "./scheduler/index.js";
-
-/** Outcome of a crawl trigger, so callers (the MCP trigger_crawl tool) can report honestly. */
-export type CrawlOutcome = "ran" | "skipped";
-
-/** Split the optional MCP_AUTH_SCOPES env (space- or comma-delimited) into a scope list. */
-function parseScopes(raw: string | undefined): string[] | undefined {
-  if (!raw) return undefined;
-  const scopes = raw.split(/[\s,]+/).filter(Boolean);
-  return scopes.length > 0 ? scopes : undefined;
-}
-
-/**
- * Tiny liveness/readiness server.
- *
- * Bound on `config.port`, separate from the MCP server (`config.mcpPort`).
- * `/health` is pure liveness (process is up). `/readyz` is readiness — it
- * resolves `store.count()`; a reachable vector store → 200, anything else →
- * 503 so the pod is pulled out of rotation (and rollouts wait) until the
- * backend recovers.
- */
-function createHealthServer(store: VectorStore): http.Server {
-  return http.createServer((req, res) => {
-    const url = req.url ?? "";
-    if (req.method === "GET" && url === "/health") {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ status: "ok" }));
-      return;
-    }
-    if (req.method === "GET" && url === "/readyz") {
-      store
-        .count()
-        .then(() => {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ status: "ready" }));
-        })
-        .catch((err: unknown) => {
-          res.writeHead(503, { "content-type": "application/json" });
-          res.end(
-            JSON.stringify({
-              status: "unready",
-              error: toMessage(err),
-            }),
-          );
-        });
-      return;
-    }
-    res.writeHead(404, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "not_found" }));
-  });
-}
 
 async function main(): Promise<void> {
   // Telemetry is initialized by the Dockerfile's
@@ -86,45 +34,6 @@ async function main(): Promise<void> {
   // ─── Sources ───
   const sources = loadSourcesFromFile("sources.json");
 
-  // ─── Core crawl+process function ───
-  // Mutex prevents overlapping runs from scheduler + MCP trigger_crawl racing.
-  let crawlInProgress = false;
-
-  async function runCrawl(): Promise<CrawlOutcome> {
-    if (crawlInProgress) {
-      logger.warn("crawl already in progress, skipping");
-      return "skipped";
-    }
-
-    if (sources.length === 0) {
-      logger.warn("no sources configured, skipping crawl");
-      return "skipped";
-    }
-
-    crawlInProgress = true;
-    const startedAt = Date.now();
-    try {
-      const crawlResult = await crawlAll(sources, {
-        timeoutMs: config.crawlTimeoutMs,
-        userAgent: config.userAgent,
-      });
-
-      if (crawlResult.succeeded.length === 0) {
-        logger.warn("all crawls failed, nothing to process");
-        return "ran";
-      }
-
-      // recordDiffsProcessed / recordAlertFired are emitted inside
-      // ingestAndDiff / the alert engine so the CLI path counts them too.
-      const pipelineResult = await ingestAndDiff(crawlResult.succeeded, embedder, store);
-      await alertEngine.processDiffs(pipelineResult.diffs);
-      return "ran";
-    } finally {
-      crawlInProgress = false;
-      recordCrawlDuration(Date.now() - startedAt);
-    }
-  }
-
   // ─── Intel engine ───
   const intel = createIntelEngine(embedder, store, llm);
 
@@ -141,6 +50,17 @@ async function main(): Promise<void> {
       };
 
   const alertEngine = createAlertEngine(llm, alertSink, config);
+
+  // ─── Core crawl+process function ───
+  // The single writer. Its mutex is what stops the scheduler and an MCP
+  // trigger_crawl from racing; see src/crawl-runner.ts.
+  const runCrawl = createCrawlRunner({
+    sources,
+    crawlOptions: { timeoutMs: config.crawlTimeoutMs, userAgent: config.userAgent },
+    embedder,
+    store,
+    alertEngine,
+  });
 
   // ─── MCP OAuth resource-server protection (optional) ───
   // When MCP_AUTH=workos the MCP port becomes an OAuth 2.1 resource server that

@@ -4,6 +4,7 @@ import {
   createOAuthProtection,
   createWorkosVerifier,
   type OAuthProtection,
+  parseScopes,
   protectedResourceMetadata,
 } from "./oauth.js";
 
@@ -171,5 +172,25 @@ describe("authorize — acceptance", () => {
     const token = await mintToken({ scope: "intel:read intel:write" });
     const decision = await makeProtection(["intel:read"]).authorize(`Bearer ${token}`);
     expect(decision.ok).toBe(true);
+  });
+});
+
+describe("parseScopes", () => {
+  it("returns undefined when the env var is unset or empty", () => {
+    expect(parseScopes(undefined)).toBeUndefined();
+    expect(parseScopes("")).toBeUndefined();
+  });
+
+  it("splits on spaces and on commas", () => {
+    expect(parseScopes("intel:read intel:write")).toEqual(["intel:read", "intel:write"]);
+    expect(parseScopes("intel:read,intel:write")).toEqual(["intel:read", "intel:write"]);
+    expect(parseScopes("intel:read, intel:write")).toEqual(["intel:read", "intel:write"]);
+  });
+
+  it("returns undefined for a value that is only separators", () => {
+    // Not `[]`. An empty required-scope array reads as "enforce scopes" while
+    // checking against nothing, which is a stricter-looking config that
+    // enforces less than the unset one.
+    expect(parseScopes("  ,, ")).toBeUndefined();
   });
 });

@@ -118,6 +118,18 @@ export function protectedResourceMetadata(config: OAuthConfig): ProtectedResourc
   return metadata;
 }
 
+/**
+ * Split the optional MCP_AUTH_SCOPES env (space- or comma-delimited) into the
+ * `requiredScopes` list. An env var that is set but contains only separators
+ * yields `undefined` rather than `[]`, so a stray value cannot quietly turn
+ * scope enforcement into a check against an empty list.
+ */
+export function parseScopes(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const scopes = raw.split(/[\s,]+/).filter(Boolean);
+  return scopes.length > 0 ? scopes : undefined;
+}
+
 /** The outcome of enforcing auth on a request. */
 export type AuthDecision =
   | { ok: true; claims: JWTPayload }
