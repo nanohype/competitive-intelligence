@@ -438,6 +438,69 @@ function checkChartValues(tenantName, platformName, chartValues, errors) {
 }
 
 /**
+ * Cross-region inference-profile geo prefixes, mirroring the operator's
+ * `inferenceProfileGeoPrefixes` (platform_model_scoping.go).
+ */
+const GEO_PREFIXES = ["us.", "eu.", "apac.", "us-gov.", "jp.", "au.", "global."];
+
+/** Chart env keys that carry a Bedrock model id the pod will invoke. */
+const MODEL_ENV_KEYS = /^BEDROCK_.*MODEL(_ID)?$/;
+
+/**
+ * Does `allowed` (an entry in spec.identity.allowedModels) grant `invoked`?
+ *
+ * This mirrors the operator's ARN expansion rather than comparing strings,
+ * because the operator is what actually decides. For each entry it emits a
+ * foundation-model ARN and an inference-profile ARN, both with a trailing `*`
+ * (wildcardSuffix), so an entry grants any id that starts with it — and a
+ * geo-prefixed entry additionally grants the de-prefixed foundation id, while a
+ * plain entry additionally grants the `us.`-prefixed profile id.
+ *
+ * Getting this wrong in the permissive direction would make the gate pass a
+ * combination the operator then denies, which is the whole failure this check
+ * exists to prevent.
+ */
+function modelGrantCovers(allowed, invoked) {
+  const geo = GEO_PREFIXES.find((p) => allowed.startsWith(p));
+  const forms = geo ? [allowed, allowed.slice(geo.length)] : [allowed, `us.${allowed}`];
+  return forms.some((f) => invoked.startsWith(f));
+}
+
+/**
+ * Every Bedrock model id the chart renders must be covered by
+ * `spec.identity.allowedModels`.
+ *
+ * The operator clamps this role with an explicit Deny over NotResource, so a
+ * model the chart sets and the CR omits is not a soft failure — it is
+ * AccessDenied on every invoke, in a deployment whose CI is green. The pairing
+ * is invisible to the CRD schema (both sides are free-form strings) and to the
+ * eval tier (CI assumes a different role entirely), so this is the only place
+ * the two can be held together.
+ *
+ * Skipped when the Platform declares `allowedModelFamilies` instead: that is a
+ * prefix vocabulary with different semantics, and the CRD already forbids
+ * declaring both.
+ */
+function checkModelCoverage(platform, chartValues, errors) {
+  const identity = platform?.spec?.identity ?? {};
+  const allowed = identity.allowedModels;
+  if (!Array.isArray(allowed) || allowed.length === 0) return;
+  if (identity.allowedModelFamilies?.length > 0) return;
+
+  for (const { file, values } of chartValues) {
+    for (const [key, invoked] of Object.entries(values.env ?? {})) {
+      if (!MODEL_ENV_KEYS.test(key) || typeof invoked !== "string" || invoked === "") continue;
+      if (allowed.some((a) => modelGrantCovers(a, invoked))) continue;
+      errors.push(
+        `${file}: env.${key}=\`${invoked}\` is not covered by ` +
+          `Platform.spec.identity.allowedModels [${allowed.join(", ")}] — the operator denies ` +
+          "every model outside that list, so this renders a pod that cannot invoke its own model",
+      );
+    }
+  }
+}
+
+/**
  * Every check that reads the parsed inputs. Pure: no I/O, no exits — so the
  * self-test can run it over mutated copies.
  *
@@ -534,6 +597,7 @@ function validate(documents, schemas, chartValues) {
           "exclusive (CRD admission rule) — declare one or the other",
       );
     }
+    checkModelCoverage(platform, chartValues, errors);
   }
 
   if (platform && budget) {
@@ -662,6 +726,42 @@ function selfTest(documents, schemaBytes, sourceManifest, schemas, chartValues) 
         ).replace("agents.tenant=strategy", "agents.tenant=marketing");
       },
       expect: /agents\.tenant=`marketing`/,
+    },
+    {
+      // The bug that shipped: the chart moved to Sonnet 5 and allowedModels
+      // stayed on Sonnet 4, so the operator's Deny made every invoke fail while
+      // CI stayed green. Pinned as a rejection case, not as a comment.
+      name: "a chart model id the CR's allowedModels does not grant",
+      mutate: ({ docs }) => {
+        find(docs, "Platform").spec.identity.allowedModels = [
+          "us.anthropic.claude-sonnet-4-6",
+          "amazon.titan-embed-text-v2:0",
+        ];
+      },
+      expect: /env\.BEDROCK_LLM_MODEL=.* is not covered by/,
+    },
+    {
+      // A near-miss the other way: a longer id must not be granted by a
+      // shorter unrelated one. `...-sonnet-5` must not satisfy `...-sonnet-4`.
+      name: "an allowedModels entry that only prefix-resembles the invoked model",
+      mutate: ({ docs, values }) => {
+        find(docs, "Platform").spec.identity.allowedModels = [
+          "us.anthropic.claude-sonnet-4",
+          "amazon.titan-embed-text-v2:0",
+        ];
+        values[0].values.env.BEDROCK_LLM_MODEL = "us.anthropic.claude-sonnet-5";
+      },
+      expect: /BEDROCK_LLM_MODEL=`us\.anthropic\.claude-sonnet-5` is not covered/,
+    },
+    {
+      // The embedding model is the second half of the pair and is easy to
+      // forget, because nothing about a retrieval path looks like inference.
+      name: "an embedding model dropped from allowedModels",
+      mutate: ({ docs }) => {
+        const identity = find(docs, "Platform").spec.identity;
+        identity.allowedModels = identity.allowedModels.filter((m) => !m.startsWith("amazon."));
+      },
+      expect: /env\.BEDROCK_EMBEDDING_MODEL=.* is not covered by/,
     },
   ];
 
