@@ -191,10 +191,23 @@ jobs:
       # nanohype/nanohype, declared in scripts/vendored.json. A copy that
       # drifts is the defect — fixes propagate outward from the library,
       # never inward.
-      - name: Checkout nanohype (vendored source of truth)
+      - name: Read the pinned nanohype ref
+        id: pin
+        run: |
+          echo "repo=$(jq -r .upstream.repository scripts/vendored.json)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(jq -r .upstream.ref scripts/vendored.json)" >> "$GITHUB_OUTPUT"
+
+      # Checked out at the pinned commit, not at main. Comparing against main
+      # would make this required check a verdict about nanohype's latest merge
+      # rather than about the commit under test — any library change upstream
+      # would turn this repository red without a commit here. Whether the pin
+      # has fallen behind is asked by the scheduled vendored-freshness
+      # workflow, off the blocking path.
+      - name: Checkout nanohype at the pinned ref
         uses: actions/checkout@v4
         with:
-          repository: nanohype/nanohype
+          repository: ${{ steps.pin.outputs.repo }}
+          ref: ${{ steps.pin.outputs.ref }}
           path: .nanohype
 
       - uses: actions/setup-node@v4
