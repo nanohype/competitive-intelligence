@@ -89,8 +89,7 @@ spec:
   budget: { name: competitive-intelligence }
   identity:
     allowedModels: # Claude Sonnet (diff analysis) + Titan (chunk embeddings)
-      - us.anthropic.claude-sonnet-4-20250514-v1:0
-      - us.anthropic.claude-sonnet-4-6
+      - us.anthropic.claude-sonnet-5
       - amazon.titan-embed-text-v2:0
     extraPolicyArns: [] # escape hatch; substrate access is operator-generated
   compliance: { soc2: true }

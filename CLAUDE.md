@@ -75,7 +75,7 @@ All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`
 - `AWS_REGION` — for Bedrock. Uses the AWS credential chain → EKS Pod Identity on the cluster, no API keys
 - `BEDROCK_LLM_MODEL` / `BEDROCK_EMBEDDING_MODEL` — model IDs (LLM defaults to a cross-region Claude Sonnet inference profile; embeddings to Titan Embed v2)
 - `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — only when using those providers directly
-- `ANTHROPIC_LLM_MODEL` / `OPENAI_LLM_MODEL` — direct-API model IDs (defaults `claude-sonnet-4-6` / `gpt-4o`)
+- `ANTHROPIC_LLM_MODEL` / `OPENAI_LLM_MODEL` — direct-API model IDs (defaults `claude-sonnet-5` / `gpt-4o`)
 - `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` — OpenAI embedding model + vector size (default 1024; 1024 for Titan v2, 1536 for OpenAI)
 - `VECTOR_PROVIDER` — `pgvector` in cluster (durable, restart-safe), `memory` for local dev/tests
 - `DATABASE_URL` / `PG*` — Postgres connection for pgvector; in cluster these come from `competitive-intelligence/<env>/db-credentials`
