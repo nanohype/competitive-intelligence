@@ -1,15 +1,38 @@
 {
+  "_README": "Where the vendored copies in this repository come from. Every entry is a byte-identical copy of its source in nanohype/nanohype at `upstream.ref` \u2014 never hand-edit one; fixes land upstream with their tests and propagate outward. The pin is what makes `npm run sync:vendored:check` a verdict about this commit rather than about whatever nanohype's main branch happens to be when CI runs: without it, an unrelated merge upstream turns this repository's required check red. Whether the pin has fallen behind is a different question, asked on a schedule rather than on the blocking path.",
+  "upstream": {
+    "repository": "nanohype/nanohype",
+    "ref": "c7d274fc44d296045090c31525be42ce1e9feda5"
+  },
   "entries": [
-    { "src": "library/scripts/sync-vendored.mjs", "dest": "scripts/sync-vendored.mjs" },
-    { "src": "library/config/biome.base.json", "dest": "biome.base.json" },
+    {
+      "src": "library/scripts/sync-vendored.mjs",
+      "dest": "scripts/sync-vendored.mjs"
+    },
+    {
+      "src": "library/config/biome.base.json",
+      "dest": "biome.base.json"
+    },
     {
       "src": "library/runtime/src/circuit-breaker.ts",
       "dest": "src/vendor/runtime/circuit-breaker.ts"
     },
-    { "src": "library/runtime/src/guardrails.ts", "dest": "src/vendor/runtime/guardrails.ts" },
-    { "src": "library/runtime/src/logger.ts", "dest": "src/vendor/runtime/logger.ts" },
-    { "src": "library/runtime/src/metrics.ts", "dest": "src/vendor/runtime/metrics.ts" },
-    { "src": "library/runtime/src/registry.ts", "dest": "src/vendor/runtime/registry.ts" },
+    {
+      "src": "library/runtime/src/guardrails.ts",
+      "dest": "src/vendor/runtime/guardrails.ts"
+    },
+    {
+      "src": "library/runtime/src/logger.ts",
+      "dest": "src/vendor/runtime/logger.ts"
+    },
+    {
+      "src": "library/runtime/src/metrics.ts",
+      "dest": "src/vendor/runtime/metrics.ts"
+    },
+    {
+      "src": "library/runtime/src/registry.ts",
+      "dest": "src/vendor/runtime/registry.ts"
+    },
     {
       "src": "templates/tenant-chart-base/skeleton/chart",
       "dest": "chart/charts/tenant-chart-base",
