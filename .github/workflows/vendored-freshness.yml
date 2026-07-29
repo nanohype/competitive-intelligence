@@ -1,0 +1,47 @@
+name: vendored-freshness
+
+# Is the pinned nanohype commit still the newest one? Deliberately NOT part of
+# pull-request CI. The answer changes when someone pushes to another repository,
+# so as a required check it would turn red on unrelated branches here and train
+# people to ignore it; and a "behind" answer is not a defect — the vendored
+# copies still match the commit they claim, which is the property
+# `sync:vendored:check` blocks on. This runs on a schedule instead, where a red
+# run is a notification that the library moved and the pin can be advanced.
+on:
+  schedule:
+    - cron: '0 14 * * 1' # Mondays, 14:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: pinned nanohype ref vs upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pinned nanohype ref
+        id: pin
+        run: echo "repo=$(jq -r .upstream.repository scripts/vendored.json)" >> "$GITHUB_OUTPUT"
+
+      # Full history, unlike the blocking gate. Freshness compares two commits —
+      # the pin and the default branch's tip — so both have to be reachable,
+      # and a shallow clone fails loudly rather than reporting "current".
+      - name: Checkout nanohype at its default branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pin.outputs.repo }}
+          fetch-depth: 0
+          path: .nanohype
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # No install step: the script uses only Node built-ins and git.
+      - name: Compare the pin against upstream
+        run: npm run sync:vendored:freshness
+        env:
+          NANOHYPE_DIR: .nanohype

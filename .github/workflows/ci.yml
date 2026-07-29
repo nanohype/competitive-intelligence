@@ -218,3 +218,14 @@ jobs:
         run: node scripts/sync-vendored.mjs --check
         env:
           NANOHYPE_DIR: .nanohype
+
+      # The gate's own guards, exercised rather than assumed. It vendors into a
+      # scratch root from the same pinned checkout the step above reads, then
+      # breaks the inputs every rule exists to catch — a branch name where a SHA
+      # is required, a pin no checkout contains, an edited copy, an unexpected
+      # or deleted file in a vendored tree, an undeclared module in an exclusive
+      # directory — and fails unless each one is rejected.
+      - name: Vendored copy gate self-test
+        run: node scripts/sync-vendored.mjs --self-test
+        env:
+          NANOHYPE_DIR: .nanohype
