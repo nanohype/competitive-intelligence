@@ -5,16 +5,27 @@
  * config, which demands vector-store and crawler settings an eval run has no
  * business needing. The eval wants exactly one thing — an LlmProvider — and
  * asking for it directly keeps a missing DATABASE_URL from failing an eval.
+ *
+ * It builds the *same* client the app uses, pointed at a ModelGateway, so the
+ * eval measures the path production runs on — including the route's guardrail,
+ * which is part of what these prompts are graded against. A direct-to-Bedrock
+ * path here would grade a configuration no environment deploys.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
-import { DEFAULT_ANTHROPIC_LLM_MODEL, DEFAULT_BEDROCK_LLM_MODEL } from "../src/config.js";
+import { DEFAULT_LLM_ROUTE } from "../src/config.js";
 import type { LlmProvider, LlmResponse } from "../src/providers/llm.js";
 
 const TIMEOUT_MS = 120_000;
 
-/** Backends an eval may name. Kept narrow — these are the ones we run on. */
-export const EVAL_BACKENDS = ["bedrock", "anthropic"] as const;
+/**
+ * Backends an eval may name.
+ *
+ * One, and that is the design rather than an omission: every model this org
+ * runs is reached through a ModelGateway, so a backend that went around one
+ * would measure a system nobody deploys. To evaluate a different model, point
+ * the gateway's route at it.
+ */
+export const EVAL_BACKENDS = ["gateway"] as const;
 export type EvalBackend = (typeof EVAL_BACKENDS)[number];
 
 /**
@@ -32,64 +43,40 @@ export function resolveEvalLlm(name: string): LlmProvider {
     );
   }
 
-  if (name === "anthropic") {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('EVAL_LLM="anthropic" requires ANTHROPIC_API_KEY.');
-    }
-    return anthropicProvider(apiKey, process.env.EVAL_MODEL || DEFAULT_ANTHROPIC_LLM_MODEL);
+  const endpoint = process.env.MODEL_GATEWAY_ENDPOINT;
+  if (!endpoint) {
+    // Checked here rather than at the first case: without it every case fails
+    // with the same connection error, which reads as the model failing.
+    throw new Error(
+      'EVAL_LLM="gateway" requires MODEL_GATEWAY_ENDPOINT — the base URL of a reachable ' +
+        "ModelGateway. In cluster that is the operator-published endpoint; outside it, run " +
+        "upstream's standalone `aigw` and point at that.",
+    );
   }
 
-  // Bedrock rides the AWS credential chain — Pod Identity in cluster, the
-  // usual profile/role locally. There is no key to check here, so a missing
-  // credential surfaces as the first call failing, which is still a failure
-  // and not a skip.
-  return bedrockProvider(
-    process.env.AWS_REGION ?? "us-west-2",
-    process.env.EVAL_MODEL || DEFAULT_BEDROCK_LLM_MODEL,
-  );
+  return gatewayProvider(endpoint, process.env.EVAL_MODEL_ROUTE || DEFAULT_LLM_ROUTE);
 }
 
-function bedrockProvider(region: string, modelId: string): LlmProvider {
-  const client = new BedrockRuntimeClient({
-    region,
-    maxAttempts: 3,
-    requestHandler: { connectionTimeout: 5_000, requestTimeout: TIMEOUT_MS },
+function gatewayProvider(endpoint: string, route: string): LlmProvider {
+  const client = new Anthropic({
+    baseURL: endpoint,
+    // The gateway holds the AWS credential; the eval holds none.
+    apiKey: "unused-the-gateway-holds-the-credential",
+    timeout: TIMEOUT_MS,
+    maxRetries: 2,
   });
-  return {
-    async chat(system, userMessage) {
-      const response = await client.send(
-        new ConverseCommand({
-          modelId,
-          system: [{ text: system }],
-          messages: [{ role: "user", content: [{ text: userMessage }] }],
-          // No temperature: the current Sonnet generation rejects the knob
-          // outright ("`temperature` is deprecated for this model"). So there
-          // is no dial to pin a run down with, and two runs of the same
-          // fixture can legitimately differ. That is the reason capability is
-          // scored as a rate against a floor rather than case by case.
-          inferenceConfig: { maxTokens: 4096 },
-        }),
-        { abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
-      );
-      const text =
-        response.output?.message?.content
-          ?.filter((b) => "text" in b)
-          .map((b) => b.text)
-          .join("") ?? "";
-      return zeroUsage(text);
-    },
-  };
-}
 
-function anthropicProvider(apiKey: string, model: string): LlmProvider {
-  const client = new Anthropic({ apiKey, timeout: TIMEOUT_MS, maxRetries: 2 });
   return {
     async chat(system, userMessage) {
       const response = await client.messages.create({
-        model,
+        model: route,
+        // No temperature: the current Sonnet generation rejects the knob
+        // outright ("`temperature` is deprecated for this model"). So there is
+        // no dial to pin a run down with, and two runs of the same fixture can
+        // legitimately differ. That is why capability is scored as a rate
+        // against a floor rather than case by case.
         max_tokens: 4096,
-        system,
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userMessage }],
       });
       return zeroUsage(

@@ -9,26 +9,32 @@ const logLevelSchema = z.enum(["debug", "info", "warn", "error"]).default("info"
  * side is bumped, and the eval would quietly start measuring something the
  * radar never uses.
  */
-export const DEFAULT_BEDROCK_LLM_MODEL = "us.anthropic.claude-sonnet-5";
-export const DEFAULT_ANTHROPIC_LLM_MODEL = "claude-sonnet-5";
+export const DEFAULT_LLM_ROUTE = "default";
+export const DEFAULT_EMBEDDING_ROUTE = "embeddings";
 
 const schema = z
   .object({
-    llmProvider: z.enum(["bedrock", "anthropic", "openai"]).default("bedrock"),
-    embeddingProvider: z.enum(["bedrock", "openai"]).default("bedrock"),
-    anthropicApiKey: z.string().optional(),
-    openaiApiKey: z.string().optional(),
+    // The Platform's ModelGateway, published on ModelGateway.status.endpoint.
+    // Every model call goes here: the gateway holds the AWS identity, applies
+    // the route's guardrail and rate limit, and records the request.
+    modelGatewayEndpoint: z
+      .string()
+      .url()
+      // .url() alone accepts any scheme, so a bare `host:8080` parses as a URL
+      // whose protocol is `host:`. Both the Messages client and fetch need an
+      // http(s) base, and would otherwise fail at request time rather than here.
+      .refine((v) => /^https?:\/\//.test(v), {
+        message: "MODEL_GATEWAY_ENDPOINT must be an http(s) URL",
+      }),
+    // Route names on that gateway, not model ids. The ModelGateway CR maps each
+    // to a concrete Bedrock model, so switching models is a CR edit and the
+    // model never appears in this app's configuration.
+    llmRoute: z.string().default(DEFAULT_LLM_ROUTE),
+    embeddingRoute: z.string().default(DEFAULT_EMBEDDING_ROUTE),
 
     awsRegion: z.string().default("us-east-1"),
-    bedrockLlmModel: z.string().default(DEFAULT_BEDROCK_LLM_MODEL),
-    bedrockEmbeddingModel: z.string().default("amazon.titan-embed-text-v2:0"),
 
-    // Direct-API model IDs for the non-Bedrock providers (injectable, not
-    // hardcoded). Anthropic-direct uses the bare current Sonnet alias.
-    anthropicLlmModel: z.string().default(DEFAULT_ANTHROPIC_LLM_MODEL),
-    openaiLlmModel: z.string().default("gpt-4o"),
-
-    embeddingModel: z.string().default("text-embedding-3-small"),
+    // The width of the pgvector column, forwarded to the embeddings route.
     embeddingDimensions: z.number().default(1024),
 
     vectorProvider: z.enum(["memory", "pgvector"]).default("memory"),
@@ -73,29 +79,8 @@ const schema = z
     logLevel: logLevelSchema,
   })
   .superRefine((data, ctx) => {
-    // Direct API providers require their keys
-    if (data.llmProvider === "anthropic" && !data.anthropicApiKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic",
-        path: ["anthropicApiKey"],
-      });
-    }
-    if (data.llmProvider === "openai" && !data.openaiApiKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "OPENAI_API_KEY is required when LLM_PROVIDER=openai",
-        path: ["openaiApiKey"],
-      });
-    }
-    if (data.embeddingProvider === "openai" && !data.openaiApiKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai",
-        path: ["openaiApiKey"],
-      });
-    }
-    // Bedrock uses AWS credential chain — no key validation needed
+    // The gateway needs no key: it authenticates to Bedrock with its own Pod
+    // Identity credentials, and this app holds no model credential at all.
 
     // WorkOS resource-server protection needs both the issuer (to verify the
     // token) and this server's canonical URI (the audience it must be bound to).
@@ -125,16 +110,10 @@ function num(val: string | undefined): number | undefined {
 
 export function loadConfig(): Config {
   return schema.parse({
-    llmProvider: process.env.LLM_PROVIDER,
-    embeddingProvider: process.env.EMBEDDING_PROVIDER,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openaiApiKey: process.env.OPENAI_API_KEY,
+    modelGatewayEndpoint: process.env.MODEL_GATEWAY_ENDPOINT,
+    llmRoute: process.env.LLM_ROUTE,
+    embeddingRoute: process.env.EMBEDDING_ROUTE,
     awsRegion: process.env.AWS_REGION,
-    bedrockLlmModel: process.env.BEDROCK_LLM_MODEL,
-    bedrockEmbeddingModel: process.env.BEDROCK_EMBEDDING_MODEL,
-    anthropicLlmModel: process.env.ANTHROPIC_LLM_MODEL,
-    openaiLlmModel: process.env.OPENAI_LLM_MODEL,
-    embeddingModel: process.env.EMBEDDING_MODEL,
     embeddingDimensions: num(process.env.EMBEDDING_DIMENSIONS),
     vectorProvider: process.env.VECTOR_PROVIDER,
     databaseUrl: process.env.DATABASE_URL,

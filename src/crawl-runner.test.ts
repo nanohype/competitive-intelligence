@@ -23,8 +23,8 @@ import type { Config } from "./config.js";
 import { createCrawlRunner } from "./crawl-runner.js";
 import type { FetchResult } from "./crawler/fetcher.js";
 import type { Source } from "./crawler/sources.js";
-import type { LlmProvider } from "./providers/llm.js";
 import type { EmbeddingProvider } from "./providers/embeddings.js";
+import type { LlmProvider } from "./providers/llm.js";
 import type { SearchResult, VectorDocument, VectorStore } from "./providers/vectors.js";
 
 const SOURCES: Source[] = [

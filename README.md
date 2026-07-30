@@ -17,7 +17,7 @@ A radar that watches competitor marketing, docs, and pricing pages and tells you
 
 Two halves: an autonomous **push radar** (scheduler → crawl → semantic-diff → alert) and an interactive **pull surface** — an MCP server whose tools Claude surfaces call. The radar posts through an outbound Slack sink; the query surface is the MCP server.
 
-History is durable — embeddings live in pgvector (Aurora), so a pod restart or rollout diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any unseeded source is treated as baseline seeding (ingest + embed, no alerts). Bedrock (Claude Sonnet via Converse for analysis, Titan v2 for embeddings) is the default and runs on-account via EKS Pod Identity — no keys; Anthropic and OpenAI are pluggable alternates. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the bounded contexts, the crawl→alert data flow, and the load-bearing decisions.
+History is durable — embeddings live in pgvector (Aurora), so a pod restart or rollout diffs the next crawl against real history instead of re-flagging every page as new. A cold-start guard backs that up: the first crawl of any unseeded source is treated as baseline seeding (ingest + embed, no alerts). Analysis (Claude Sonnet) and embeddings (Titan v2) both run on Bedrock, reached through the Platform's ModelGateway — the gateway holds the AWS identity via EKS Pod Identity, applies each route's guardrail, and is where the request is recorded. The app holds no key of any kind. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the bounded contexts, the crawl→alert data flow, and the load-bearing decisions.
 
 ![architecture](docs/architecture.svg)
 
@@ -45,7 +45,7 @@ task ci   # build + lint + typecheck + format:check + test + helm lint/template 
 
 ## Bedrock prerequisites
 
-Bedrock is the default for both LLM and embeddings and runs on the AWS credential chain — no API keys. On the cluster that chain resolves to the pod's IAM role via EKS Pod Identity; locally it resolves to your `~/.aws` credentials or SSO. Confirm `aws sts get-caller-identity` works, and enable model access for the configured `BEDROCK_LLM_MODEL` (default `us.anthropic.claude-sonnet-5`) and `amazon.titan-embed-text-v2:0` in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for your region. To use a direct API provider instead, set `LLM_PROVIDER` / `EMBEDDING_PROVIDER` and the matching key.
+Both analysis and embeddings run on Bedrock, reached through the Platform's ModelGateway — the app holds no API key and no AWS model credential. The gateway authenticates on the AWS credential chain: on the cluster that resolves to its EKS Pod Identity association with the tenant role, and it is the gateway, not the app, that needs the grant. Enable model access for the models the `ModelGateway` routes resolve to — default `us.anthropic.claude-sonnet-5` and `amazon.titan-embed-text-v2:0` — in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for your region. To run against a different model, add or repoint a route on the CR; there is no provider setting in the app.
 
 ## Sources
 
