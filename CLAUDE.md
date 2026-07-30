@@ -8,7 +8,7 @@ Competitive-intelligence radar — crawls competitor sites, semantic-diffs each 
 
 A standalone Platform tenant of the `strategy` team on the `eks-agent-platform` operator. It has two halves. An autonomous **push radar**: crawl → chunk → embed → semantic-diff → (if significant) LLM analysis → Slack alert, on a schedule. And an interactive **pull surface**: an MCP server whose tools any Claude surface (Claude Tag et al.) calls to search the accumulated intelligence, trigger a crawl, and inspect status/sources. The same intelligence is also queryable from the CLI.
 
-Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations selected by config, so swapping a backend is a one-file change to the bootstrap. Bedrock is the default for LLM (Converse) and embeddings (Titan v2), running on the AWS credential chain → EKS Pod Identity on the cluster, no keys. Anthropic and OpenAI are pluggable alternates.
+Built around a provider-registry seam — LLM, embeddings, and vector store are each a `createRegistry<T>()` of named implementations. The vector store has real alternates (memory for dev, pgvector for production); the model paths have exactly one arm each, the Platform's ModelGateway, because reaching a model any other way would bypass the guardrail, the capture and the per-tenant attribution the gateway applies. Alternative models are routes on the `ModelGateway` CR, where they inherit all three. The app holds no model credential.
 
 ## How It Works
 
@@ -25,7 +25,7 @@ Core insight: semantic diffing via embedding cosine similarity, not text compari
 
 ## Architecture
 
-- **src/providers/** — Self-registering provider registry. LLM (`llm.ts`: Bedrock/Anthropic/OpenAI), embeddings (`embeddings.ts`: Bedrock Titan/OpenAI), vector store (`vectors.ts`: `MemoryVectorStore` for dev/tests + `PgVectorStore` for durable production, both behind the `VectorStore` interface). All via the vendored `createRegistry<T>()`. The Bedrock LLM marks a Converse `cachePoint` after the static analysis system prompt — token usage is emitted per kind as `bedrock.{input,output,cache_read,cache_write}_tokens` so cache effectiveness is measurable. Every external call carries an explicit timeout (Bedrock via `requestHandler` + an `AbortSignal.timeout` deadline, Anthropic/OpenAI via the SDK `timeout` option).
+- **src/providers/** — Self-registering provider registry. LLM (`llm.ts`: the ModelGateway, speaking Anthropic Messages), embeddings (`embeddings.ts`: the ModelGateway's embeddings route, speaking the OpenAI embeddings shape the gateway translates to Titan), vector store (`vectors.ts`: `MemoryVectorStore` for dev/tests + `PgVectorStore` for durable production, both behind the `VectorStore` interface). All via the vendored `createRegistry<T>()`. The LLM provider marks an ephemeral cache breakpoint after the static analysis system prompt — token usage is emitted per kind as `bedrock.{input,output,cache_read,cache_write}_tokens` so cache effectiveness is measurable. Every external call carries an explicit timeout (the Messages client via its `timeout` option, the embeddings call via `AbortSignal.timeout`), and each is circuit-breakered.
 - **src/crawler/** — HTTP fetcher with per-host circuit breakers, HTML→text via cheerio scoped by `selectors`. SSRF-guarded (`url-guard.ts`) — every outbound URL rejects loopback/RFC1918/link-local/metadata addresses before the fetch. Sequential crawling. `sources.ts` Zod-validates `sources.json` on load.
 - **src/vendor/runtime/** — Vendored `@nanohype/runtime` modules: `circuit-breaker.ts` (sliding-window breaker, injectable clock, onOpen/onClose transition hooks), `guardrails.ts` (reserved-tag stripping + an unforgeable per-call fence, applied to crawled page content and retrieved chunks before either reaches a prompt), `registry.ts` (`createRegistry<T>`), `metrics.ts` (the lazy namespace-qualified OTel instrument core behind `src/metrics.ts`), and `logger.ts` (the JSON-lines + OTel-trace-correlation core behind `src/logger.ts`). Byte-identical copies of `nanohype/library/runtime` — the same consumption model as the vendored `tenant-chart-base` chart. `scripts/sync-vendored.mjs` (re)writes the copies from a nanohype checkout (`NANOHYPE_DIR`, default `../nanohype`); CI runs it with `--check` and fails on drift. Never edit these locally — fix upstream, re-sync.
 - **src/resilience/** — App wiring over the vendored breaker: `createBreaker(name, opts)` maps `failureThreshold`/`windowMs`/`halfOpenAfterMs` (defaults 5 / 5 min / 60 s) and raises/lowers the `circuit_breaker.open` gauge on trip/success/reset. The breaker trips on failure density within the rolling window, not on a consecutive count.
@@ -74,13 +74,10 @@ task ci                  # full local gate (build + lint + typecheck + format:ch
 
 All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`. In-cluster, secret values come from AWS Secrets Manager (`competitive-intelligence/<env>/*`) via the chart's ExternalSecret, synced into one Kubernetes Secret consumed `envFrom`; `.env.example` is for local dev only.
 
-- `LLM_PROVIDER` — bedrock (default), anthropic, or openai
-- `EMBEDDING_PROVIDER` — bedrock (default) or openai
-- `AWS_REGION` — for Bedrock. Uses the AWS credential chain → EKS Pod Identity on the cluster, no API keys
-- `BEDROCK_LLM_MODEL` / `BEDROCK_EMBEDDING_MODEL` — model IDs (LLM defaults to a cross-region Claude Sonnet inference profile; embeddings to Titan Embed v2)
-- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — only when using those providers directly
-- `ANTHROPIC_LLM_MODEL` / `OPENAI_LLM_MODEL` — direct-API model IDs (defaults `claude-sonnet-5` / `gpt-4o`)
-- `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` — OpenAI embedding model + vector size (default 1024; 1024 for Titan v2, 1536 for OpenAI)
+- `AWS_REGION` — for the AWS services this app calls directly (Secrets Manager, S3). Not the model plane
+- `MODEL_GATEWAY_ENDPOINT` — the Platform's ModelGateway. Every model call goes here; the app holds no model credential of any kind. The routes resolve to `us.anthropic.claude-sonnet-5` for analysis and `amazon.titan-embed-text-v2:0` for embeddings, declared on the `ModelGateway` CR in `platform.yaml` — change a model there, not here
+- `LLM_ROUTE` / `EMBEDDING_ROUTE` — route names on that gateway (defaults `default` / `embeddings`), not model IDs. The `ModelGateway` CR maps each to a Bedrock model
+- `EMBEDDING_DIMENSIONS` — the pgvector column width, forwarded to the embeddings route and asserted on every returned vector (default 1024, matching Titan v2)
 - `VECTOR_PROVIDER` — `pgvector` in cluster (durable, restart-safe), `memory` for local dev/tests
 - `DATABASE_URL` / `PG*` — Postgres connection for pgvector; in cluster these come from `competitive-intelligence/<env>/db-credentials`
 - `PG_CA_PATH` — optional CA bundle for verifying the pgvector TLS connection; unset → Node's built-in trust store
@@ -99,7 +96,7 @@ All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`
 - `NODE_ENV` — development (default), production, or test
 - `LOG_LEVEL` — debug, info (default), warn, error. Zod-validated.
 
-Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment region. Sources are defined in `sources.json` (see `sources.example.json`), Zod-validated on load.
+The gateway needs Bedrock model access to Claude Sonnet and Titan Embed v2 in the deployment region — the grant is on the tenant role the gateway runs as, not on this app. Sources are defined in `sources.json` (see `sources.example.json`), Zod-validated on load.
 
 ## Conventions
 
@@ -111,8 +108,8 @@ Bedrock needs model access to Claude Sonnet and Titan Embed v2 in the deployment
 - Circuit breaker for external calls — per-host for the HTTP fetcher, per-provider for LLM and embeddings. Sliding-window semantics (vendored from `@nanohype/runtime`, wired via `src/resilience/`): trips on failure density within the window, single half-open probe after the cooldown
 - Vendored modules under `src/vendor/runtime/` stay byte-identical to `nanohype/library/runtime` at the commit pinned in `scripts/vendored.json` — behavior changes land upstream with their tests, then `npm run sync:vendored -- --ref=<sha>` here, which re-vendors and moves the pin together so the recorded commit and the bytes on disk cannot describe different things. `sync:vendored:check` is the CI drift gate and reads upstream at that pin, so a merge in nanohype never turns this repo's required check red; `sync:vendored:freshness` asks whether the pin has fallen behind, weekly and off the blocking path
 - `platform.yaml` is CI-validated against the real operator CRD schemas vendored under `schemas/crd/` (from `eks-agent-platform` at the SHA pinned in `schemas/crd/source.json`, with a SHA-256 per file recorded alongside it). The gate is tamper-evident and drift-evident in two independent places: the validator hashes every vendored schema against its recorded digest before parsing it — offline, so an edited copy fails on a laptop too — and `schemas:check` compares the copies to the operator repo at the pinned SHA, catching a tamper that also rewrote the digest as well as a pin that no longer describes the committed schemas. Pin fidelity is the whole of the blocking gate — whether the pin has fallen behind upstream is asked by `schemas:freshness` on a weekly schedule, so a required check never flips red because another repo moved. The walker is strict about unknown fields — controller-gen emits no `additionalProperties: false`, so a misspelled spec key would otherwise validate clean and then be pruned silently by the apiserver. It also asserts scope (`Tenant` cluster-scoped, `Platform`/`BudgetPolicy` namespaced), the CRD's model-allow-list CEL rule, and that the tenant/platform names agree across the CRs and every chart values file's OTel attributes. `--self-test` breaks all of that in memory and fails unless each break is rejected
-- Bedrock-default LLM; prompt-cached analysis system prompt via Converse `cachePoint`
-- No framework lock-in for LLMs — direct SDK calls via the provider interface
+- One model path: the Platform's ModelGateway. The analysis system prompt carries an ephemeral cache breakpoint so the stable prefix is cached rather than re-billed
+- No framework lock-in for LLMs — the Anthropic Messages client behind the provider interface
 - Single-writer: `replicaCount: 1`; the scheduler, alert sink, and MCP server share one process, and the crawl mutex prevents overlapping scheduler + `trigger_crawl` runs (no horizontal scale without leader election)
 
 ## Testing
@@ -144,8 +141,7 @@ When adding tests: mock providers by implementing the interface directly (`LlmPr
 
 ## Dependencies
 
-- `@aws-sdk/client-bedrock-runtime` — Bedrock LLM (Converse) + embeddings (Titan); on-account inference
-- `@anthropic-ai/sdk` / `openai` — direct API providers (optional)
+- `@anthropic-ai/sdk` — the Messages client, pointed at the Platform's ModelGateway. Embeddings need no client: the gateway's embeddings route takes a small JSON body over `fetch`
 - `@modelcontextprotocol/sdk` — the MCP server (streamable HTTP), the pull/query surface
 - `jose` — JWKS fetch + JWT verification for the optional MCP OAuth resource-server layer (`aud`/`iss`/`exp` in one `jwtVerify`)
 - `@slack/web-api` — outbound alert sink (`chat.postMessage`)

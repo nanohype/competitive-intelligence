@@ -99,8 +99,8 @@ spec:
     # `npm run platform:validate` fails when it does not. Adding a model is a
     # deliberate widening of what this tenant may spend on.
     allowedModels:
-      - us.anthropic.claude-sonnet-5 # BEDROCK_LLM_MODEL — diff analysis (Converse)
-      - amazon.titan-embed-text-v2:0 # BEDROCK_EMBEDDING_MODEL — chunk embeddings
+      - us.anthropic.claude-sonnet-5 # the `default` ModelGateway route — diff analysis
+      - amazon.titan-embed-text-v2:0 # the `embeddings` ModelGateway route — chunk embeddings
     # Escape hatch for grants outside the datastore + capability vocabularies.
     # The pgvector store's access is generated from spec.datastores, so nothing
     # is needed here.
@@ -119,3 +119,50 @@ spec:
   datastores:
     - name: main
       kind: relational
+---
+# The model plane. The app names routes, never models: this CR maps `default` and
+# `embeddings` to concrete Bedrock models, and the gateway rewrites each request
+# upstream. Model selection, the `us.` inference-profile prefix the Claude family
+# requires, the guardrail and the rate limits all live here rather than in chart
+# values, so changing a model is a CR edit rather than an app redeploy.
+#
+# The operator reconciles this into an Envoy AI Gateway data plane in
+# `tenants-competitive-intelligence`, running under the tenant ServiceAccount —
+# so the gateway reaches Bedrock as this tenant and the app itself holds no AWS
+# model credential.
+apiVersion: agents.nanohype.dev/v1alpha1
+kind: ModelGateway
+metadata:
+  name: competitive-intelligence
+  namespace: tenants-growth
+spec:
+  platformRef:
+    name: competitive-intelligence
+  routes:
+    # Diff analysis. Served by the AWSAnthropic schema, which takes the native
+    # Anthropic Messages shape the app sends and translates it to Bedrock — so
+    # the prompt-cache breakpoint on the stable system prefix survives.
+    - name: default
+      modelSource: foundation
+      modelFamily: anthropic
+      modelId: anthropic.claude-sonnet-5
+      # The current Claude family reports inferenceTypesSupported:
+      # [INFERENCE_PROFILE], so the bare foundation-model id is rejected by
+      # InvokeModel. Outside the US switch this to `eu.` / `global.` and widen
+      # spec.identity.allowedModels on the Platform to match.
+      crossRegionProfile: us.anthropic.claude-sonnet-5
+      # The crawl analyses one changed page at a time on a single writer, so
+      # this is a runaway guard rather than a quota.
+      rateLimit: 120
+    # Chunk embeddings. Titan is not Anthropic-shaped, so this route is served by
+    # the AWSBedrock schema: the app sends the OpenAI embeddings shape on
+    # /v1/embeddings and the gateway translates it to a Titan InvokeModel call.
+    # Titan is single-input, and so is the translator — the app already embedded
+    # one chunk per call, so nothing about the crawl changes.
+    - name: embeddings
+      modelSource: foundation
+      modelFamily: amazon-titan
+      modelId: amazon.titan-embed-text-v2:0
+      # Embeddings run per chunk, so a crawl of a large page makes many more
+      # calls than the analysis does. Roomier for that reason, still bounded.
+      rateLimit: 600

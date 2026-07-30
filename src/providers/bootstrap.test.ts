@@ -1,62 +1,61 @@
 /**
- * Provider selection tests.
+ * Provider wiring tests.
  *
- * The per-provider classes in `llm.ts` and `embeddings.ts` are SDK adapters —
- * build a request, call, parse — and are excluded from the coverage denominator
- * as such (see vitest.config.ts). The selection in front of them is not an
- * adapter: it is the decision of which model the radar actually runs on, and
- * getting it wrong means the app comes up healthy on the wrong backend and says
- * nothing about it.
+ * The provider classes in `llm.ts` and `embeddings.ts` are adapters — build a
+ * request, call, parse — and are excluded from the coverage denominator as such
+ * (see vitest.config.ts). What is asserted here is the shape of the registry in
+ * front of them: that the gateway is registered, and that it is the *only*
+ * thing registered. A second arm reaching a vendor API directly would leave no
+ * guardrail, no capture and no per-tenant attribution, and would look perfectly
+ * healthy doing it.
  *
- * Constructing a provider builds an SDK client but issues no request, so this
- * runs offline with no credentials.
+ * Constructing a provider builds a client but issues no request, so this runs
+ * offline with no credentials.
  */
 
 import { describe, expect, it } from "vitest";
 import type { Config } from "../config.js";
-import { bootstrapEmbeddings } from "./embeddings.js";
-import { bootstrapLlm } from "./llm.js";
+import { bootstrapEmbeddings, embeddingRegistry } from "./embeddings.js";
+import { bootstrapLlm, llmRegistry } from "./llm.js";
 
-function config(overrides: Partial<Config>): Config {
+function config(overrides: Partial<Config> = {}): Config {
   return {
     awsRegion: "us-east-1",
-    bedrockLlmModel: "us.anthropic.claude-sonnet-4-6",
-    bedrockEmbeddingModel: "amazon.titan-embed-text-v2:0",
-    anthropicApiKey: "sk-ant-test",
-    anthropicLlmModel: "claude-sonnet-4-6",
-    openaiApiKey: "sk-test",
-    openaiLlmModel: "gpt-4o",
-    embeddingModel: "text-embedding-3-small",
+    modelGatewayEndpoint: "http://gw.tenants-x.svc.cluster.local:8080",
+    llmRoute: "default",
+    embeddingRoute: "embeddings",
     embeddingDimensions: 1024,
     ...overrides,
   } as Config;
 }
 
 describe("bootstrapLlm", () => {
-  it.each(["bedrock", "anthropic", "openai"] as const)("resolves the %s provider", (provider) => {
-    const llm = bootstrapLlm(config({ llmProvider: provider }));
+  it("resolves the gateway provider", () => {
+    const llm = bootstrapLlm(config());
     expect(typeof llm.chat).toBe("function");
   });
 
-  it("fails loudly on an unknown provider rather than falling back", () => {
-    // A silent fallback to the default would mean a typo in LLM_PROVIDER ships
-    // a pod that runs, bills, and answers on a model nobody chose.
-    expect(() =>
-      bootstrapLlm(config({ llmProvider: "gemini" as Config["llmProvider"] })),
-    ).toThrow();
+  // There is deliberately one arm. A vendor-API provider would reach a model
+  // with no guardrail, no capture and no per-tenant attribution — the three
+  // things the gateway exists to apply. Alternative models are routes on the
+  // ModelGateway CR, where they inherit all of it.
+  it("registers the gateway as the only way to reach a model", () => {
+    bootstrapLlm(config());
+    expect(llmRegistry.names()).toEqual(["gateway"]);
   });
 });
 
 describe("bootstrapEmbeddings", () => {
-  it.each(["bedrock", "openai"] as const)("resolves the %s provider", (provider) => {
-    const embedder = bootstrapEmbeddings(config({ embeddingProvider: provider }));
+  it("resolves the gateway provider and carries the configured width", () => {
+    const embedder = bootstrapEmbeddings(config());
     expect(typeof embedder.embed).toBe("function");
-    expect(embedder.dimensions).toBeGreaterThan(0);
+    // The pgvector column is declared at this width; a provider that reported a
+    // different one would insert vectors the store rejects.
+    expect(embedder.dimensions).toBe(1024);
   });
 
-  it("fails loudly on an unknown provider", () => {
-    expect(() =>
-      bootstrapEmbeddings(config({ embeddingProvider: "cohere" as Config["embeddingProvider"] })),
-    ).toThrow();
+  it("registers the gateway as the only embeddings path", () => {
+    bootstrapEmbeddings(config());
+    expect(embeddingRegistry.names()).toEqual(["gateway"]);
   });
 });

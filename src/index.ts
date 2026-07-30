@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     sources: sources.length,
     crawlInterval: `${config.crawlIntervalMinutes}m`,
     vectorProvider: config.vectorProvider,
-    llmProvider: config.llmProvider,
+    llmRoute: config.llmRoute,
     alertSink: config.slackBotToken ? "slack" : "log",
     port: config.port,
     mcpPort: config.mcpPort,

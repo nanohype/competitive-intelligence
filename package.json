@@ -1,7 +1,7 @@
 {
   "name": "competitive-intelligence",
   "version": "0.1.0",
-  "description": "Competitive intelligence radar \u2014 detect signals before they become headlines",
+  "description": "Competitive intelligence radar — detect signals before they become headlines",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -35,8 +35,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.105.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.1030.0",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
@@ -44,7 +43,6 @@
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "jose": "^6.2.3",
-    "openai": "^6.34.0",
     "pg": "^8.13.0",
     "zod": "^4.3.6"
   },

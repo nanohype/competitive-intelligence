@@ -14,9 +14,12 @@ for the other:
 ## Running the model tier
 
 ```sh
-EVAL_LLM=bedrock npm run eval      # AWS credential chain, Claude on Bedrock
-EVAL_LLM=anthropic npm run eval    # needs ANTHROPIC_API_KEY
-EVAL_MODEL=<id> EVAL_LLM=bedrock npm run eval   # pin a specific model
+# Needs a reachable ModelGateway. In cluster that is the operator-published
+# endpoint; outside it, run upstream's standalone `aigw` and point at that.
+MODEL_GATEWAY_ENDPOINT=http://localhost:8080 EVAL_LLM=gateway npm run eval
+
+# Grade a different route on the same gateway.
+EVAL_MODEL_ROUTE=escalation MODEL_GATEWAY_ENDPOINT=... EVAL_LLM=gateway npm run eval
 ```
 
 `EVAL_LLM` decides whether the tier runs at all, and the two states are

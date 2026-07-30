@@ -4,9 +4,9 @@ import { loadConfig } from "./config.js";
 // Every env var loadConfig reads. Cleared before each test so the ambient
 // environment (or a local .env) can't leak into the assertions, restored after.
 const CONFIG_ENV_KEYS = [
-  "LLM_PROVIDER",
-  "EMBEDDING_PROVIDER",
-  "ANTHROPIC_API_KEY",
+  "MODEL_GATEWAY_ENDPOINT",
+  "LLM_ROUTE",
+  "EMBEDDING_ROUTE",
   "OPENAI_API_KEY",
   "AWS_REGION",
   "BEDROCK_LLM_MODEL",
@@ -40,6 +40,10 @@ describe("loadConfig", () => {
         ([key]) => !(CONFIG_ENV_KEYS as readonly string[]).includes(key),
       ),
     );
+    // The gateway endpoint has no default — there is no sensible one, since it
+    // is derived from the Platform name. Cases that test its absence clear it
+    // again themselves.
+    process.env.MODEL_GATEWAY_ENDPOINT = "http://gw.tenants-x.svc.cluster.local:8080";
   });
 
   afterEach(() => {
@@ -48,8 +52,8 @@ describe("loadConfig", () => {
 
   it("applies defaults with an empty environment", () => {
     const c = loadConfig();
-    expect(c.llmProvider).toBe("bedrock");
-    expect(c.embeddingProvider).toBe("bedrock");
+    expect(c.llmRoute).toBe("default");
+    expect(c.embeddingRoute).toBe("embeddings");
     expect(c.vectorProvider).toBe("memory");
     expect(c.significanceThreshold).toBe(0.3);
     expect(c.slackAlertChannel).toBe("#competitive-intel");
@@ -72,29 +76,19 @@ describe("loadConfig", () => {
 
   // ── superRefine: direct-API providers require their key ──────────────────
 
-  it("requires ANTHROPIC_API_KEY when LLM_PROVIDER=anthropic", () => {
-    process.env.LLM_PROVIDER = "anthropic";
-    expect(() => loadConfig()).toThrow(/ANTHROPIC_API_KEY is required/);
+  it("requires a model gateway endpoint", () => {
+    // Every model call goes through the gateway, so an unset endpoint is not a
+    // degraded mode — the app has no other way to reach a model and should
+    // refuse to start rather than fail on the first crawl.
+    process.env.MODEL_GATEWAY_ENDPOINT = "";
+    expect(() => loadConfig()).toThrow();
   });
 
-  it("accepts LLM_PROVIDER=anthropic when the key is present", () => {
-    process.env.LLM_PROVIDER = "anthropic";
-    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
-    expect(loadConfig().llmProvider).toBe("anthropic");
-  });
-
-  it("requires OPENAI_API_KEY when LLM_PROVIDER=openai", () => {
-    process.env.LLM_PROVIDER = "openai";
-    expect(() => loadConfig()).toThrow(/OPENAI_API_KEY is required when LLM_PROVIDER=openai/);
-  });
-
-  it("requires OPENAI_API_KEY when EMBEDDING_PROVIDER=openai", () => {
-    process.env.EMBEDDING_PROVIDER = "openai";
-    expect(() => loadConfig()).toThrow(/OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai/);
-  });
-
-  it("needs no key for the default Bedrock providers (AWS credential chain)", () => {
-    expect(() => loadConfig()).not.toThrow();
+  it("rejects an endpoint that is not a URL", () => {
+    // A bare host is the easy mistake, and the SDK would treat it as a relative
+    // base and issue requests to nowhere in particular.
+    process.env.MODEL_GATEWAY_ENDPOINT = "competitive-intelligence-gateway:8080";
+    expect(() => loadConfig()).toThrow();
   });
 
   // ── outbound alert sink ──────────────────────────────────────────────────

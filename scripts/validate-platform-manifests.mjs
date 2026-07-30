@@ -444,7 +444,6 @@ function checkChartValues(tenantName, platformName, chartValues, errors) {
 const GEO_PREFIXES = ["us.", "eu.", "apac.", "us-gov.", "jp.", "au.", "global."];
 
 /** Chart env keys that carry a Bedrock model id the pod will invoke. */
-const MODEL_ENV_KEYS = /^BEDROCK_.*MODEL(_ID)?$/;
 
 /**
  * Does `allowed` (an entry in spec.identity.allowedModels) grant `invoked`?
@@ -467,34 +466,83 @@ function modelGrantCovers(allowed, invoked) {
 }
 
 /**
- * Every Bedrock model id the chart renders must be covered by
+ * Every Bedrock model id a ModelGateway route resolves to must be covered by
  * `spec.identity.allowedModels`.
  *
- * The operator clamps this role with an explicit Deny over NotResource, so a
- * model the chart sets and the CR omits is not a soft failure — it is
- * AccessDenied on every invoke, in a deployment whose CI is green. The pairing
- * is invisible to the CRD schema (both sides are free-form strings) and to the
- * eval tier (CI assumes a different role entirely), so this is the only place
- * the two can be held together.
+ * The gateway runs under the tenant ServiceAccount, so it invokes Bedrock as
+ * the tenant and the operator's explicit Deny over NotResource applies to it. A
+ * model a route names and the CR omits is not a soft failure — it is
+ * AccessDenied on every call, in a deployment whose CI is green. The pairing is
+ * invisible to the CRD schema (both sides are free-form strings), so this is the
+ * only place the two can be held together.
+ *
+ * Both `modelId` and `crossRegionProfile` are checked: a bare `allowedModels`
+ * entry implies the `us.` profile and nothing else, so a route moved to `eu.`
+ * without widening the CR fails silently at run time.
  *
  * Skipped when the Platform declares `allowedModelFamilies` instead: that is a
  * prefix vocabulary with different semantics, and the CRD already forbids
  * declaring both.
  */
-function checkModelCoverage(platform, chartValues, errors) {
+function checkModelCoverage(platform, gateways, errors) {
   const identity = platform?.spec?.identity ?? {};
   const allowed = identity.allowedModels;
   if (!Array.isArray(allowed) || allowed.length === 0) return;
   if (identity.allowedModelFamilies?.length > 0) return;
 
+  for (const gateway of gateways) {
+    for (const route of gateway?.spec?.routes ?? []) {
+      // An imported route names a model ARN; allowedModels does not describe it.
+      if (route.modelSource === "imported") continue;
+      for (const [field, invoked] of [
+        ["modelId", route.modelId],
+        ["crossRegionProfile", route.crossRegionProfile],
+      ]) {
+        if (typeof invoked !== "string" || invoked === "") continue;
+        if (allowed.some((a) => modelGrantCovers(a, invoked))) continue;
+        errors.push(
+          `ModelGateway/${gateway.metadata?.name}: routes[${route.name}].${field}=\`${invoked}\` ` +
+            `is not covered by Platform.spec.identity.allowedModels [${allowed.join(", ")}] — the ` +
+            "gateway invokes Bedrock as the tenant, and the operator denies every model outside " +
+            "that list, so this renders a gateway that cannot invoke its own route",
+        );
+      }
+    }
+  }
+}
+
+/**
+ * The chart's `MODEL_GATEWAY_ENDPOINT` must be the endpoint the operator will
+ * publish, and every configured route must exist on the ModelGateway.
+ *
+ * The operator derives the endpoint from the Platform name and never reads the
+ * chart, so the two are coupled by convention alone. A rename on either side, or
+ * a route the CR does not declare, yields pods that start cleanly and fail every
+ * model call — connection refused, or a gateway 404 for an unmatched route.
+ */
+function checkGatewayWiring(platform, gateways, chartValues, errors) {
+  if (!platform) return;
+  const name = platform.metadata?.name;
+  const routes = new Set(gateways.flatMap((g) => (g?.spec?.routes ?? []).map((r) => r.name)));
+  const expected = `http://${name}-gateway.tenants-${name}.svc.cluster.local:8080`;
+
   for (const { file, values } of chartValues) {
-    for (const [key, invoked] of Object.entries(values.env ?? {})) {
-      if (!MODEL_ENV_KEYS.test(key) || typeof invoked !== "string" || invoked === "") continue;
-      if (allowed.some((a) => modelGrantCovers(a, invoked))) continue;
+    const endpoint = values.env?.MODEL_GATEWAY_ENDPOINT;
+    if (typeof endpoint === "string" && endpoint !== "" && endpoint !== expected) {
       errors.push(
-        `${file}: env.${key}=\`${invoked}\` is not covered by ` +
-          `Platform.spec.identity.allowedModels [${allowed.join(", ")}] — the operator denies ` +
-          "every model outside that list, so this renders a pod that cannot invoke its own model",
+        `${file}: env.MODEL_GATEWAY_ENDPOINT=\`${endpoint}\` is not the endpoint the operator ` +
+          `publishes for Platform \`${name}\` (\`${expected}\`) — the app would start cleanly ` +
+          "and fail every model call with a connection error",
+      );
+    }
+    for (const key of ["LLM_ROUTE", "EMBEDDING_ROUTE"]) {
+      const route = values.env?.[key];
+      if (typeof route !== "string" || route === "" || routes.size === 0) continue;
+      if (routes.has(route)) continue;
+      errors.push(
+        `${file}: env.${key}=\`${route}\` names no route on the ModelGateway ` +
+          `(declared: ${[...routes].join(", ")}) — the gateway has no rule matching it, so every ` +
+          "request is refused at the gateway rather than reaching a model",
       );
     }
   }
@@ -554,6 +602,7 @@ function validate(documents, schemas, chartValues) {
   const tenants = of("Tenant");
   const platforms = of("Platform");
   const budgets = of("BudgetPolicy");
+  const gateways = of("ModelGateway");
 
   for (const [kind, found] of [
     ["Tenant", tenants],
@@ -597,7 +646,8 @@ function validate(documents, schemas, chartValues) {
           "exclusive (CRD admission rule) — declare one or the other",
       );
     }
-    checkModelCoverage(platform, chartValues, errors);
+    checkModelCoverage(platform, gateways, errors);
+    checkGatewayWiring(platform, gateways, chartValues, errors);
   }
 
   if (platform && budget) {
@@ -728,30 +778,29 @@ function selfTest(documents, schemaBytes, sourceManifest, schemas, chartValues) 
       expect: /agents\.tenant=`marketing`/,
     },
     {
-      // The bug that shipped: the chart moved to Sonnet 5 and allowedModels
+      // The bug that shipped: the model moved to Sonnet 5 and allowedModels
       // stayed on Sonnet 4, so the operator's Deny made every invoke fail while
       // CI stayed green. Pinned as a rejection case, not as a comment.
-      name: "a chart model id the CR's allowedModels does not grant",
+      name: "a route model the CR's allowedModels does not grant",
       mutate: ({ docs }) => {
         find(docs, "Platform").spec.identity.allowedModels = [
           "us.anthropic.claude-sonnet-4-6",
           "amazon.titan-embed-text-v2:0",
         ];
       },
-      expect: /env\.BEDROCK_LLM_MODEL=.* is not covered by/,
+      expect: /routes\[default\]\..* is not covered by/,
     },
     {
       // A near-miss the other way: a longer id must not be granted by a
       // shorter unrelated one. `...-sonnet-5` must not satisfy `...-sonnet-4`.
-      name: "an allowedModels entry that only prefix-resembles the invoked model",
-      mutate: ({ docs, values }) => {
+      name: "an allowedModels entry that only prefix-resembles the route's model",
+      mutate: ({ docs }) => {
         find(docs, "Platform").spec.identity.allowedModels = [
           "us.anthropic.claude-sonnet-4",
           "amazon.titan-embed-text-v2:0",
         ];
-        values[0].values.env.BEDROCK_LLM_MODEL = "us.anthropic.claude-sonnet-5";
       },
-      expect: /BEDROCK_LLM_MODEL=`us\.anthropic\.claude-sonnet-5` is not covered/,
+      expect: /crossRegionProfile=`us\.anthropic\.claude-sonnet-5` is not covered/,
     },
     {
       // The embedding model is the second half of the pair and is easy to
@@ -761,7 +810,24 @@ function selfTest(documents, schemaBytes, sourceManifest, schemas, chartValues) 
         const identity = find(docs, "Platform").spec.identity;
         identity.allowedModels = identity.allowedModels.filter((m) => !m.startsWith("amazon."));
       },
-      expect: /env\.BEDROCK_EMBEDDING_MODEL=.* is not covered by/,
+      expect: /routes\[embeddings\]\..* is not covered by/,
+    },
+    {
+      // The gateway wiring is two conventions with nothing but this gate holding
+      // them together, so both directions are exercised.
+      name: "a gateway endpoint that is not the one the operator publishes",
+      mutate: ({ values }) => {
+        values[0].values.env.MODEL_GATEWAY_ENDPOINT =
+          "http://model-gateway.default.svc.cluster.local:8080";
+      },
+      expect: /is not the endpoint the operator publishes/,
+    },
+    {
+      name: "a configured route the ModelGateway does not declare",
+      mutate: ({ values }) => {
+        values[0].values.env.EMBEDDING_ROUTE = "vectors";
+      },
+      expect: /names no route on the ModelGateway/,
     },
   ];
 

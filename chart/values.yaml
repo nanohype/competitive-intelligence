@@ -192,14 +192,17 @@ env:
   # Non-secret configuration. Secrets (Slack tokens, optional provider keys,
   # PGUSER/PGPASSWORD) come through the ExternalSecret.
   AWS_REGION: us-west-2
-  LLM_PROVIDER: bedrock
-  EMBEDDING_PROVIDER: bedrock
-  # Cross-region Claude Sonnet inference profile (Converse requires the
-  # us.anthropic.*-v1:0 profile form, not a bare alias). Matches the config.ts
-  # default. Verify the profile exists in the deploy region before promoting and
-  # bump to the current Sonnet snapshot when rolling regions.
-  BEDROCK_LLM_MODEL: us.anthropic.claude-sonnet-5
-  BEDROCK_EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
+  # The Platform's ModelGateway. The operator derives this from the Platform
+  # name and publishes it on ModelGateway.status.endpoint; the app holds no AWS
+  # model credential and reaches Bedrock only through here.
+  MODEL_GATEWAY_ENDPOINT: http://competitive-intelligence-gateway.tenants-competitive-intelligence.svc.cluster.local:8080
+  # Route names on that gateway, not model ids. The ModelGateway CR maps them to
+  # the Claude inference profile and Titan, so the model — and the `us.` prefix
+  # the Claude family requires — lives in one CR instead of here.
+  LLM_ROUTE: default
+  EMBEDDING_ROUTE: embeddings
+  # The pgvector column width, forwarded to the embeddings route and asserted on
+  # every returned vector.
   EMBEDDING_DIMENSIONS: '1024'
   # Durable vector store — survives restarts so the first post-restart crawl
   # diffs against real history instead of re-flooding alerts. Backed by the
