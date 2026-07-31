@@ -1,0 +1,11 @@
+{
+  // Emit config. tsconfig.json also type-checks evals/ and the colocated tests,
+  // none of which belong in dist/ — so the build narrows back to src/ and keeps
+  // `rootDir` here, where emit layout actually matters.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}

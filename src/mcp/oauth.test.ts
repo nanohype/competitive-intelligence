@@ -1,4 +1,4 @@
-import { type CryptoKey, generateKeyPair, SignJWT } from "jose";
+import { type CryptoKey, createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   createOAuthProtection,
@@ -156,6 +156,53 @@ describe("authorize — rejection paths", () => {
     expect(decision.body.error).toBe("insufficient_scope");
     expect(decision.wwwAuthenticate).toContain('scope="intel:read intel:write"');
   });
+
+  it("403 when the token carries no scope claim at all", async () => {
+    // Distinct from carrying the wrong scopes: a token with no `scope` and no
+    // `scp` must read as granting nothing, never as unconstrained.
+    const token = await mintToken();
+    const decision = await makeProtection(["intel:read"]).authorize(`Bearer ${token}`);
+    expect(decision.ok).toBe(false);
+    if (decision.ok) return;
+    expect(decision.status).toBe(403);
+    expect(decision.body.error).toBe("insufficient_scope");
+  });
+
+  it("401 with a signature-specific reason when the token is signed by an untrusted key", async () => {
+    // Different from the malformed-token case above. This token is well-formed,
+    // correctly-audienced and unexpired — it is only signed by a key this
+    // resource does not trust, which is the forgery attempt rather than a
+    // client bug, and jose reports it under its own error code.
+    const attacker = await generateKeyPair("RS256");
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256" })
+      .setSubject("user_123")
+      .setIssuer(ISSUER)
+      .setAudience(RESOURCE)
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(attacker.privateKey);
+
+    const decision = await makeProtection().authorize(`Bearer ${token}`);
+    expect(decision.ok).toBe(false);
+    if (decision.ok) return;
+    expect(decision.status).toBe(401);
+    expect(decision.body.error_description).toBe("token signature invalid");
+  });
+
+  it("reports a generic reason when the verifier throws something that is not an object", async () => {
+    // Nothing in jose throws a bare primitive, but `describeVerifyError` reads
+    // `code` off the thrown value and this is the arm that keeps a non-standard
+    // throw from surfacing as an unhandled rejection or an "undefined" reason.
+    const protection = createOAuthProtection({ issuer: ISSUER, resource: RESOURCE }, () => {
+      throw "not an error object";
+    });
+    const decision = await protection.authorize("Bearer anything");
+    expect(decision.ok).toBe(false);
+    if (decision.ok) return;
+    expect(decision.status).toBe(401);
+    expect(decision.body.error_description).toBe("token verification failed");
+  });
 });
 
 describe("authorize — acceptance", () => {
@@ -172,6 +219,82 @@ describe("authorize — acceptance", () => {
     const token = await mintToken({ scope: "intel:read intel:write" });
     const decision = await makeProtection(["intel:read"]).authorize(`Bearer ${token}`);
     expect(decision.ok).toBe(true);
+  });
+
+  it("accepts scopes delivered as an `scp` array", async () => {
+    // Authorization servers split on this: OAuth's `scope` is space-delimited,
+    // while `scp` arrives as an array. Reading only the first would silently
+    // treat every token from such a server as granting nothing.
+    const token = await new SignJWT({ scp: ["intel:read", "intel:write"] })
+      .setProtectedHeader({ alg: "RS256" })
+      .setSubject("user_123")
+      .setIssuer(ISSUER)
+      .setAudience(RESOURCE)
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(privateKey);
+
+    const decision = await makeProtection(["intel:read"]).authorize(`Bearer ${token}`);
+    expect(decision.ok).toBe(true);
+  });
+
+  it("ignores non-string entries in an `scp` array", async () => {
+    const token = await new SignJWT({ scp: ["intel:read", 42, null] })
+      .setProtectedHeader({ alg: "RS256" })
+      .setSubject("user_123")
+      .setIssuer(ISSUER)
+      .setAudience(RESOURCE)
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(privateKey);
+
+    const decision = await makeProtection(["intel:read"]).authorize(`Bearer ${token}`);
+    expect(decision.ok).toBe(true);
+  });
+});
+
+describe("createWorkosVerifier without an injected key set", () => {
+  it("derives the WorkOS JWKS URL, tolerating a trailing slash on the issuer", () => {
+    // Production leaves `jwks` unset, so this is the only path that builds the
+    // remote key set — and the only one where a trailing slash on the issuer
+    // would produce a double-slashed JWKS URL. `createRemoteJWKSet` resolves
+    // lazily, so constructing it touches no network.
+    expect(() => createWorkosVerifier({ issuer: `${ISSUER}/`, audience: RESOURCE })).not.toThrow();
+    expect(() => createWorkosVerifier({ issuer: ISSUER, audience: RESOURCE })).not.toThrow();
+  });
+
+  it("verifies against a JWKS resolver, not just direct key material", async () => {
+    // Production resolves keys through a JWKS *function*; the tests above pass a
+    // key object. Those are separate `jwtVerify` overloads and separate arms in
+    // the verifier, so the arm production actually runs would otherwise never be
+    // executed here. `createLocalJWKSet` is the same resolver shape as
+    // `createRemoteJWKSet` with the network removed.
+    const jwk = await exportJWK(publicKey);
+    const jwks = createLocalJWKSet({ keys: [{ ...jwk, alg: "RS256", use: "sig" }] });
+    const verify = createWorkosVerifier({ issuer: ISSUER, audience: RESOURCE, jwks });
+    const protection = createOAuthProtection({ issuer: ISSUER, resource: RESOURCE }, verify);
+
+    const decision = await protection.authorize(`Bearer ${await mintToken()}`);
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) return;
+    expect(decision.claims.sub).toBe("user_123");
+  });
+});
+
+describe("metadata for a resource served at the origin root", () => {
+  it("uses the bare well-known path when the resource has no path segment", () => {
+    // RFC 9728 §3.1 appends the resource path to the well-known prefix. With no
+    // path there is nothing to append, and appending "/" anyway would advertise
+    // a trailing-slash URL that does not match the route the server serves.
+    const rootResource = "https://ci.example.com";
+    const protection = createOAuthProtection(
+      { issuer: ISSUER, resource: rootResource },
+      createWorkosVerifier({ issuer: ISSUER, audience: rootResource, jwks: publicKey }),
+    );
+    expect(protection.isMetadataRequest("/.well-known/oauth-protected-resource")).toBe(true);
+    expect(protection.metadataUrl).toBe(
+      "https://ci.example.com/.well-known/oauth-protected-resource",
+    );
   });
 });
 
