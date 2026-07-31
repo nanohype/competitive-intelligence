@@ -5,7 +5,6 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2023"],
     "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -15,6 +14,11 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src"],
+  // evals/ is typechecked here but not built: vitest runs evals/**/*.test.ts on
+  // every PR and never typechecks anything, so without this the eval tier is the
+  // one place where a stale fixture shape or a wrong grader signature is
+  // invisible until the model tier runs. `rootDir` lives in tsconfig.build.json
+  // rather than here, since this config only ever type-checks.
+  "include": ["src", "evals"],
   "exclude": ["node_modules", "dist"]
 }

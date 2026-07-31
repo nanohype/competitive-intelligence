@@ -46,10 +46,36 @@ export default defineConfig({
       // nanohype/standards/testing-rubric.json (branches 60 / functions 75 /
       // lines 75 / statements 75). Ratchet up as the suite grows; never down.
       thresholds: {
-        lines: 91, // measured 91.99
-        functions: 92, // measured 92.48
-        branches: 81, // measured 81.94
-        statements: 90, // measured 90.64
+        lines: 93, // measured 93.09
+        functions: 94, // measured 94.07
+        branches: 85, // measured 85.79
+        statements: 92, // measured 92.26
+
+        // Per-file 100%, above the global floor, on the two files where an
+        // uncovered branch is an unproven security control rather than a
+        // coverage number. A global floor averages these against everything
+        // else, so the package can sit comfortably above its ratchet while the
+        // gap is in the SSRF guard.
+        //
+        // url-guard.ts decides whether an operator-supplied source URL may be
+        // fetched at all — every branch is a way into the VPC, the cloud
+        // metadata endpoint, or loopback.
+        //
+        // oauth.ts is the MCP resource server's token check: signature, issuer,
+        // expiry, and the RFC 8707 audience binding that stops a token minted
+        // for another resource being replayed here.
+        "src/crawler/url-guard.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/mcp/oauth.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
       },
     },
   },
