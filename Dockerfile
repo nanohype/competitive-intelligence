@@ -4,7 +4,9 @@ WORKDIR /app
 # Install and build the TypeScript app.
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json ./
+# Both configs: tsconfig.build.json sets the emit options and rootDir, and
+# extends tsconfig.json for everything else, so neither builds without the other.
+COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
