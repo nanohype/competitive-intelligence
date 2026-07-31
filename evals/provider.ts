@@ -12,7 +12,7 @@
  * path here would grade a configuration no environment deploys.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { DEFAULT_LLM_ROUTE } from "../src/config.js";
+import { anthropicBaseUrl, DEFAULT_LLM_ROUTE } from "../src/config.js";
 import type { LlmProvider, LlmResponse } from "../src/providers/llm.js";
 
 const TIMEOUT_MS = 120_000;
@@ -59,7 +59,7 @@ export function resolveEvalLlm(name: string): LlmProvider {
 
 function gatewayProvider(endpoint: string, route: string): LlmProvider {
   const client = new Anthropic({
-    baseURL: endpoint,
+    baseURL: anthropicBaseUrl(endpoint),
     // The gateway holds the AWS credential; the eval holds none.
     apiKey: "unused-the-gateway-holds-the-credential",
     timeout: TIMEOUT_MS,

@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Config } from "../config.js";
+import { anthropicBaseUrl, type Config } from "../config.js";
 import { recordBedrockTokens } from "../metrics.js";
 import { createBreaker } from "../resilience/circuit-breaker.js";
 import { createRegistry } from "../vendor/runtime/registry.js";
@@ -47,7 +47,7 @@ class GatewayLlmProvider implements LlmProvider {
 
   constructor(endpoint: string, route: string) {
     this.client = new Anthropic({
-      baseURL: endpoint,
+      baseURL: anthropicBaseUrl(endpoint),
       // The gateway holds the AWS credential; this app holds none. The SDK
       // requires the field, and the gateway ignores it.
       apiKey: "unused-the-gateway-holds-the-credential",

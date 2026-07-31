@@ -12,6 +12,28 @@ const logLevelSchema = z.enum(["debug", "info", "warn", "error"]).default("info"
 export const DEFAULT_LLM_ROUTE = "default";
 export const DEFAULT_EMBEDDING_ROUTE = "embeddings";
 
+/**
+ * The gateway's native Anthropic Messages base URL.
+ *
+ * `modelGatewayEndpoint` is the gateway root, and the gateway serves each
+ * client-facing API under its own prefix — which prefix applies depends on the
+ * wire format being spoken, not on the model behind it. The OpenAI-shaped
+ * endpoints sit at the root, which is why the embeddings provider requests
+ * `/v1/embeddings` off the endpoint directly; native Anthropic Messages is
+ * served at `POST /anthropic/v1/messages`.
+ *
+ * The Anthropic SDK appends `/v1/messages` to whatever base URL it is given,
+ * so it has to be handed the `/anthropic` prefix. Pointed at the root it would
+ * request `/v1/messages`, which the gateway routes nowhere: the model name is
+ * extracted from the request body by a processor registered per endpoint path,
+ * so an unregistered path never gets the `x-ai-eg-model` header the route
+ * rules match on. Every call fails, while the Gateway reports healthy.
+ */
+export function anthropicBaseUrl(gatewayEndpoint: string): string {
+  // Trailing slash trimmed so the joined path cannot end up doubled.
+  return `${gatewayEndpoint.replace(/\/+$/, "")}/anthropic`;
+}
+
 const schema = z
   .object({
     // The Platform's ModelGateway, published on ModelGateway.status.endpoint.
