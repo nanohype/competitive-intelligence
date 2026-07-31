@@ -57,6 +57,28 @@ jobs:
       - name: Build (emit dist)
         run: npm run build
 
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    # Its own job because FOUR_PHASE_CONTRACT wants build, lint, test and docs
+    # as four separately-failing phases. It was previously satisfied by an
+    # `echo`, which exits 0 and regenerates nothing — a phase that cannot fail
+    # is not a phase, and nothing here invoked it anyway.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm install --prefer-offline --no-audit --no-fund
+
+      - name: Generate the API reference
+        run: npm run docs
+
   helm:
     name: Helm Lint + Template
     runs-on: ubuntu-latest
