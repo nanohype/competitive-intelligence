@@ -7,3 +7,6 @@ coverage/
 
 # Local planning notes
 .plans/
+
+# Generated API reference — `npm run docs` output, regenerated on demand.
+docs/api/
