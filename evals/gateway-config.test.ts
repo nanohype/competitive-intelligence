@@ -65,25 +65,23 @@ describe("the routes come from platform.yaml", () => {
 });
 
 describe("the mapping mirrors the operator", () => {
-  it("serves an anthropic-family foundation route with AWSAnthropic", () => {
-    // The native Messages shape end to end — thinking blocks, cache points and
-    // tool use intact. AWSBedrock here would silently grade the OpenAI shape.
-    const anthropic = routes.filter(
-      (r) => r.modelFamily === "anthropic" && r.modelSource !== "imported",
-    );
-    expect(anthropic.length).toBeGreaterThan(0);
-    for (const route of anthropic) {
-      expect(backendFor(String(route.name)).spec.schema.name).toBe("AWSAnthropic");
-    }
-  });
-
-  it("serves everything else with AWSBedrock", () => {
-    const others = routes.filter(
-      (r) => !(r.modelFamily === "anthropic" && r.modelSource !== "imported"),
-    );
-    expect(others.length).toBeGreaterThan(0);
-    for (const route of others) {
-      expect(backendFor(String(route.name)).spec.schema.name).toBe("AWSBedrock");
+  it("gives every declared route the schema its family and source imply", () => {
+    // AWSAnthropic keeps the native Messages shape end to end — thinking
+    // blocks, cache points and tool use intact. AWSBedrock on an
+    // anthropic-family route would silently grade the OpenAI shape instead,
+    // and the eval would still produce a number.
+    //
+    // Asserted per route rather than by partitioning and requiring both halves
+    // to be non-empty: a repo may legitimately declare only one kind, and a
+    // test that demanded both would fail on a correct manifest. The branch not
+    // exercised here is covered by the synthetic case below.
+    expect(routes.length).toBeGreaterThan(0);
+    for (const route of routes) {
+      const expected =
+        route.modelSource !== "imported" && route.modelFamily === "anthropic"
+          ? "AWSAnthropic"
+          : "AWSBedrock";
+      expect(backendFor(String(route.name)).spec.schema.name).toBe(expected);
     }
   });
 
