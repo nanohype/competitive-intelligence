@@ -232,9 +232,9 @@ describe("the listener agrees with what the workflow points at", () => {
     const dataPort = new URL(String(endpoint)).port;
 
     const readiness = workflow.match(/- name: Start the gateway\n[\s\S]*?\n\n/)?.[0] ?? "";
-    const probes = [...readiness.matchAll(/curl\s+(-\S+)\s[^\n]*?"(http:\/\/localhost:(\d+)[^"]*)"/g)].map(
-      (m) => ({ flags: m[1], url: m[2], port: m[3] }),
-    );
+    const probes = [
+      ...readiness.matchAll(/curl\s+(-\S+)\s[^\n]*?"(http:\/\/localhost:(\d+)[^"]*)"/g),
+    ].map((m) => ({ flags: m[1], url: m[2], port: m[3] }));
     expect(probes.length).toBeGreaterThan(0);
 
     const onDataPort = probes.filter((p) => p.port === dataPort);
@@ -243,9 +243,10 @@ describe("the listener agrees with what the workflow points at", () => {
       `readiness never probes :${dataPort}, the port the eval dials — it can pass before Envoy binds`,
     ).toBeGreaterThan(0);
     for (const p of onDataPort) {
-      expect(p.flags, `${p.url} uses -f, but an unrouted request there is 404 by design`).not.toMatch(
-        /f/,
-      );
+      expect(
+        p.flags,
+        `${p.url} uses -f, but an unrouted request there is 404 by design`,
+      ).not.toMatch(/f/);
     }
     // Anything probed with -f must be a path aigw actually answers 200 on.
     for (const p of probes.filter((x) => x.flags.includes("f"))) {
