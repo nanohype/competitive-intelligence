@@ -27,6 +27,12 @@
  *     model ids stay in the manifest rather than in application config
  *   - BackendSecurityPolicy names a region only; the AWS default credential
  *     chain supplies the rest, which in CI is the eval role
+ *   - a BackendTLSPolicy over the Bedrock Backend, because port 443 alone does
+ *     not make the upstream connection TLS
+ *
+ * Two things standalone needs that a cluster already has: the GatewayClass,
+ * and a namespace on every object. Both are silent when missing — see the
+ * constants below.
  *
  * Not mirrored, because they are cluster-shaped rather than gateway-shaped:
  * the EnvoyProxy (ServiceAccount pinning, ClusterIP Service) and the rate-limit
@@ -45,6 +51,35 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /** The port `aigw run` serves on. Upstream's default; MODEL_GATEWAY_ENDPOINT must agree. */
 const LISTENER_PORT = 1975;
+
+/**
+ * Every document is namespaced, and that is load-bearing rather than tidiness.
+ *
+ * The extproc keys a route to its AIServiceBackend on the namespace/name pair.
+ * With the namespace empty the lookup misses, and the miss is silent: the
+ * gateway starts, the listener binds, the request is proxied through
+ * *untranslated*. The path stays `/anthropic/v1/messages` instead of becoming
+ * `/model/<id>/invoke`, `modelNameOverride` is never applied, and no SigV4
+ * `Authorization` header is signed — so Bedrock answers 403 "Authorization
+ * header is missing" and the eval records a model that refused every case.
+ *
+ * `default` because standalone `aigw run` has no namespace of its own; it is
+ * what upstream's own example configs use.
+ */
+const NAMESPACE = "default";
+
+/**
+ * The GatewayClass a Gateway must reference before any controller claims it.
+ *
+ * In cluster, eks-gitops applies this separately. Standalone, the config file
+ * IS the entire resource set — Envoy Gateway runs its File provider with
+ * `addMissingResources=false`, so an unresolved gatewayClassName leaves zero
+ * managed classes, the reconciler short-circuits on "no accepted gatewayclass",
+ * and nothing ever binds the listener. It logs that at info and keeps running,
+ * so the symptom is connection-refused on a gateway that looks healthy.
+ */
+const GATEWAY_CLASS = "envoy-ai-gateway";
+const GATEWAY_CLASS_CONTROLLER = "gateway.envoyproxy.io/gatewayclass-controller";
 
 /** Bedrock's own API version constant, carried on the backend schema. */
 const BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31";
@@ -106,28 +141,50 @@ export function readRoutes(manifest) {
 }
 
 export function renderGateway(routes, region) {
+  const bedrockHost = `bedrock-runtime.${region}.amazonaws.com`;
+
   const docs = [
     {
       apiVersion: `${GW_GROUP}/v1`,
+      kind: "GatewayClass",
+      metadata: { name: GATEWAY_CLASS },
+      spec: { controllerName: GATEWAY_CLASS_CONTROLLER },
+    },
+    {
+      apiVersion: `${GW_GROUP}/v1`,
       kind: "Gateway",
-      metadata: { name: "eval" },
+      metadata: { name: "eval", namespace: NAMESPACE },
       spec: {
-        gatewayClassName: "envoy-ai-gateway",
+        gatewayClassName: GATEWAY_CLASS,
         listeners: [{ name: "http", protocol: "HTTP", port: LISTENER_PORT }],
       },
     },
     {
       apiVersion: `${EG_GROUP}/v1alpha1`,
       kind: "Backend",
-      metadata: { name: "bedrock" },
+      metadata: { name: "bedrock", namespace: NAMESPACE },
       spec: {
-        endpoints: [{ fqdn: { hostname: `bedrock-runtime.${region}.amazonaws.com`, port: 443 } }],
+        endpoints: [{ fqdn: { hostname: bedrockHost, port: 443 } }],
+      },
+    },
+    {
+      // Envoy Gateway does not infer TLS from port 443 — without this the
+      // upstream connection is cleartext and AWS's load balancer answers
+      // `400 The plain HTTP request was sent to HTTPS port` before Bedrock
+      // ever sees the request. The operator emits the same document
+      // (modelgateway_reconcile.go, `<backend>-tls`); this mirrors it.
+      apiVersion: `${GW_GROUP}/v1alpha3`,
+      kind: "BackendTLSPolicy",
+      metadata: { name: "bedrock-tls", namespace: NAMESPACE },
+      spec: {
+        targetRefs: [{ group: EG_GROUP, kind: "Backend", name: "bedrock" }],
+        validation: { wellKnownCACertificates: "System", hostname: bedrockHost },
       },
     },
     {
       apiVersion: `${AI_GROUP}/${AI_VERSION}`,
       kind: "AIGatewayRoute",
-      metadata: { name: "eval" },
+      metadata: { name: "eval", namespace: NAMESPACE },
       spec: {
         parentRefs: [{ name: "eval", kind: "Gateway", group: GW_GROUP }],
         rules: routes.map((route) => ({
@@ -142,7 +199,7 @@ export function renderGateway(routes, region) {
     docs.push({
       apiVersion: `${AI_GROUP}/${AI_VERSION}`,
       kind: "AIServiceBackend",
-      metadata: { name: route.name },
+      metadata: { name: route.name, namespace: NAMESPACE },
       spec: {
         schema: { name: backendSchemaFor(route), version: BEDROCK_ANTHROPIC_VERSION },
         backendRef: { group: EG_GROUP, kind: "Backend", name: "bedrock" },
@@ -151,7 +208,7 @@ export function renderGateway(routes, region) {
     docs.push({
       apiVersion: `${AI_GROUP}/${AI_VERSION}`,
       kind: "BackendSecurityPolicy",
-      metadata: { name: route.name },
+      metadata: { name: route.name, namespace: NAMESPACE },
       spec: {
         targetRefs: [{ group: AI_GROUP, kind: "AIServiceBackend", name: route.name }],
         type: "AWSCredentials",

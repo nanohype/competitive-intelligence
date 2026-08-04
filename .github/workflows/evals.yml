@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install
-        run: npm install --prefer-offline --no-audit --no-fund
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Assume the eval role
         uses: aws-actions/configure-aws-credentials@v4
@@ -73,19 +73,28 @@ jobs:
       # Backgrounded rather than a service container: it needs the AWS
       # credentials the OIDC step just put in this job's environment, which a
       # container would not inherit, and a generated config file.
+      #
+      # Readiness is `/health` on the extproc admin port — the only endpoint
+      # that answers 200 on a working gateway. The data port is not a liveness
+      # signal: every route matches on the `x-ai-eg-model` header, so a bare
+      # `GET /` hits aigw's `route-not-found` rule and gets a deliberate 404,
+      # which `curl -f` reports as failure. A probe there can never succeed.
+      #
+      # 180s because `aigw run` fetches its own Envoy build through func-e on a
+      # cold runner before it binds anything; upstream's own e2e allows 120s
+      # with the binary already local.
       - name: Start the gateway
         run: |
           set -euo pipefail
           aigw run /tmp/aigw.yaml > /tmp/aigw.log 2>&1 &
-          for i in $(seq 1 60); do
-            if curl -fsS -o /dev/null "http://localhost:1975/" 2>/dev/null \
-               || curl -fsS -o /dev/null "http://localhost:1064/ready" 2>/dev/null; then
+          for i in $(seq 1 180); do
+            if curl -fsS -o /dev/null "http://localhost:1064/health" 2>/dev/null; then
               echo "gateway up after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "::error::aigw did not come up in 60s"
+          echo "::error::aigw did not come up in 180s"
           cat /tmp/aigw.log
           exit 1
 
