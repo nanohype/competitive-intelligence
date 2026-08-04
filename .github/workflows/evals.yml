@@ -74,11 +74,21 @@ jobs:
       # credentials the OIDC step just put in this job's environment, which a
       # container would not inherit, and a generated config file.
       #
-      # Readiness is `/health` on the extproc admin port — the only endpoint
-      # that answers 200 on a working gateway. The data port is not a liveness
-      # signal: every route matches on the `x-ai-eg-model` header, so a bare
-      # `GET /` hits aigw's `route-not-found` rule and gets a deliberate 404,
-      # which `curl -f` reports as failure. A probe there can never succeed.
+      # Ready means the port the eval dials is accepting, and nothing less.
+      # aigw brings its extproc up several seconds before Envoy binds the data
+      # port, so `/health` on the admin port alone reports ready while every
+      # request still gets connection-refused — a control plane answering for a
+      # data path that is not there yet.
+      #
+      # So both, and each is shaped for what it can prove:
+      #   - `/health` on the admin port, with -f: the extproc is live. This is
+      #     the endpoint upstream's own e2e waits on. (`/ready` does not exist;
+      #     the admin mux serves /health and /metrics only.)
+      #   - `GET /` on the data port, WITHOUT -f: a 404 here is correct — every
+      #     route matches on the `x-ai-eg-model` header, so an unrouted request
+      #     hits aigw's `route-not-found` rule by design. What is being tested
+      #     is that something accepted the connection at all, and only a bound
+      #     listener can 404. `-f` would turn that proof into a failure.
       #
       # 180s because `aigw run` fetches its own Envoy build through func-e on a
       # cold runner before it binds anything; upstream's own e2e allows 120s
@@ -88,7 +98,8 @@ jobs:
           set -euo pipefail
           aigw run /tmp/aigw.yaml > /tmp/aigw.log 2>&1 &
           for i in $(seq 1 180); do
-            if curl -fsS -o /dev/null "http://localhost:1064/health" 2>/dev/null; then
+            if curl -fsS -o /dev/null "http://localhost:1064/health" 2>/dev/null \
+               && curl -sS -o /dev/null "http://localhost:1975/" 2>/dev/null; then
               echo "gateway up after ${i}s"
               exit 0
             fi

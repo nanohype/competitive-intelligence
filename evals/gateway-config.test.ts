@@ -215,20 +215,41 @@ describe("the listener agrees with what the workflow points at", () => {
     expect(byKind("Gateway")[0].spec.listeners[0].port).toBe(1975);
   });
 
-  it("waits on an endpoint aigw serves", () => {
-    // aigw's admin server registers /health and /metrics, and nothing else. A
-    // probe at any other path 404s forever on a perfectly healthy gateway, and
-    // `curl -f` reports that as failure — so the readiness loop times out and
-    // blames the binary. The data port is not a substitute: every rule matches
-    // on x-ai-eg-model, so a bare GET / hits the route-not-found rule and gets
-    // a deliberate 404.
+  it("waits until the port the eval dials is accepting", () => {
+    // The failure this guards is one the obvious probe walks straight into.
+    // aigw's extproc reports healthy several seconds before Envoy binds the
+    // data port, so a readiness loop that only asks the admin port passes
+    // early and every eval request gets connection-refused — observed as
+    // `gateway up after 2s` against `listening ... after 4.9s`.
+    //
+    // A readiness check that never touches the port the client uses is not a
+    // readiness check. So: the loop must probe the MODEL_GATEWAY_ENDPOINT
+    // port, and it must not use `-f` there, because an unrouted request is
+    // 404 by design and `-f` would read that proof-of-binding as failure.
     const workflow = readFileSync(join(repoRoot, ".github/workflows/evals.yml"), "utf8");
-    const probes = [...workflow.matchAll(/curl [^\n]*?"(http:\/\/localhost:\d+[^"]*)"/g)].map(
-      (m) => m[1],
+    const endpoint = workflow.match(/MODEL_GATEWAY_ENDPOINT:\s*(\S+)/)?.[1];
+    expect(endpoint).toBeDefined();
+    const dataPort = new URL(String(endpoint)).port;
+
+    const readiness = workflow.match(/- name: Start the gateway\n[\s\S]*?\n\n/)?.[0] ?? "";
+    const probes = [...readiness.matchAll(/curl\s+(-\S+)\s[^\n]*?"(http:\/\/localhost:(\d+)[^"]*)"/g)].map(
+      (m) => ({ flags: m[1], url: m[2], port: m[3] }),
     );
     expect(probes.length).toBeGreaterThan(0);
-    for (const probe of probes) {
-      expect(probe, `${probe} is not an endpoint aigw answers 200 on`).toBe(
+
+    const onDataPort = probes.filter((p) => p.port === dataPort);
+    expect(
+      onDataPort.length,
+      `readiness never probes :${dataPort}, the port the eval dials — it can pass before Envoy binds`,
+    ).toBeGreaterThan(0);
+    for (const p of onDataPort) {
+      expect(p.flags, `${p.url} uses -f, but an unrouted request there is 404 by design`).not.toMatch(
+        /f/,
+      );
+    }
+    // Anything probed with -f must be a path aigw actually answers 200 on.
+    for (const p of probes.filter((x) => x.flags.includes("f"))) {
+      expect(p.url, `${p.url} is not an endpoint aigw answers 200 on`).toBe(
         "http://localhost:1064/health",
       );
     }
