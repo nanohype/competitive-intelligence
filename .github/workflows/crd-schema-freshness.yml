@@ -5,8 +5,21 @@ name: crd-schema-freshness
 # repository, so as a required check it would turn red on unrelated branches
 # here and train people to ignore it; and a "behind" answer is not a defect —
 # the vendored copies still match the commit they claim, which is the property
-# `schemas:check` blocks on. This runs on a schedule instead, where a red run is
-# a notification that the operator API moved and the pin can be advanced.
+# `schemas:check` blocks on.
+#
+# That reasoning is sound and is kept. What was missing is that a red scheduled
+# run is not a signal anybody receives: this job sat red for two consecutive
+# weeks while the vendored Platform schema drifted far enough to lose a
+# validation bound the operator had already gained, and nothing said so.
+#
+# So drift files an ISSUE — one, edited in place rather than re-commented each
+# week, closed automatically once the pin catches up. The run still goes red;
+# the issue is what makes the red durable.
+#
+# The three exits are distinct on purpose. 0 is current, 2 is behind, and
+# anything else means the check could not reach a verdict at all — an
+# unreachable upstream must not be filed as confirmed drift, nor drift dismissed
+# as an unreachable upstream.
 on:
   schedule:
     - cron: '0 13 * * 1' # Mondays, 13:00 UTC
@@ -14,11 +27,15 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   freshness:
     name: pinned operator ref vs upstream
     runs-on: ubuntu-latest
+    env:
+      DRIFT_LABEL: schema-drift
+      DRIFT_TITLE: 'CRD schema pin is behind eks-agent-platform'
     steps:
       - uses: actions/checkout@v4
 
@@ -30,4 +47,89 @@ jobs:
       # sides from raw.githubusercontent.com — the pinned ref and the default
       # branch. An unreachable upstream fails rather than reporting "current".
       - name: Compare the pin against upstream
-        run: npm run schemas:freshness
+        id: freshness
+        run: |
+          set -uo pipefail
+          # Redirect to a file and read $? from the script itself. Reading an exit
+          # code off the end of a pipeline reports the LAST command's status, which
+          # is how a check ends up reporting `tee` succeeded.
+          npm run schemas:freshness > freshness.log 2>&1
+          code=$?
+          cat freshness.log
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'report<<REPORT_EOF'
+            cat freshness.log
+            echo 'REPORT_EOF'
+          } >> "$GITHUB_OUTPUT"
+          # 0 and 2 are verdicts and are handled in the steps below. Anything else
+          # is the check failing to run, and fails the job here where the log is.
+          if [[ "$code" -ne 0 && "$code" -ne 2 ]]; then
+            echo "::error::schemas:freshness exited ${code} — it could not reach a verdict"
+            exit 1
+          fi
+
+      - name: File the drift issue
+        if: steps.freshness.outputs.code == '2'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.freshness.outputs.report }}
+        run: |
+          set -euo pipefail
+          gh label create "$DRIFT_LABEL" \
+            --color B60205 \
+            --description "A vendored upstream copy is behind the repo it was copied from" \
+            2>/dev/null || true
+
+          body=$(cat <<EOF
+          The CRD schemas vendored under \`schemas/crd/\` are pinned to a commit that is no longer
+          the newest \`operators/config/crd/bases\` in
+          [nanohype/eks-agent-platform](https://github.com/nanohype/eks-agent-platform).
+
+          \`\`\`
+          ${REPORT}
+          \`\`\`
+
+          **Why this matters more than it reads.** \`platform.yaml\` is validated against these
+          copies and against nothing else. Every bound the operator's CRD gains — a \`maxItems\`,
+          a \`pattern\`, an enum — is enforced here only after this pin moves. Until then CI will
+          pass a Platform CR the apiserver would reject, and the rejection surfaces during an
+          ArgoCD sync rather than on the pull request that introduced it.
+
+          Re-vendor and re-validate:
+
+          \`\`\`
+          npm run schemas:sync -- --ref=<sha>
+          npm run platform:validate
+          \`\`\`
+
+          Read the schema diff before merging — a new constraint upstream usually implies a
+          \`platform.yaml\` change here. This issue closes itself once the pin is current.
+          EOF
+          )
+
+          existing=$(gh issue list --state open --label "$DRIFT_LABEL" --json number,title \
+            --jq "[.[] | select(.title == \"${DRIFT_TITLE}\")] | .[0].number // empty")
+
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --body "$body"
+            echo "updated issue #${existing}"
+          else
+            gh issue create --title "$DRIFT_TITLE" --label "$DRIFT_LABEL" --body "$body"
+          fi
+
+      - name: Close the drift issue
+        if: steps.freshness.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list --state open --label "$DRIFT_LABEL" --json number,title \
+            --jq "[.[] | select(.title == \"${DRIFT_TITLE}\")] | .[0].number // empty")
+          if [[ -n "$existing" ]]; then
+            gh issue close "$existing" --comment "The pin is current again — closed by the scheduled freshness check."
+          fi
+
+      - name: Fail while the pin is behind
+        if: steps.freshness.outputs.code == '2'
+        run: exit 1
