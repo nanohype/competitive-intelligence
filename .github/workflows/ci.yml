@@ -121,6 +121,37 @@ jobs:
       # Source files are gated elsewhere; this asserts the RENDERED chart too —
       # a zero account id, placeholder token, or account-less ARN that only
       # appears after templating.
+      - name: DNS egress is scoped to kube-dns, not to all of kube-system
+        run: |
+          # A NetworkPolicy `to:` list is a list of PEERS, and peers are OR'd.
+          # namespaceSelector and podSelector AND each other only inside ONE peer;
+          # as two sibling list items they mean "every pod in kube-system" OR
+          # "every same-namespace pod labelled k8s-app=kube-dns". Both forms render,
+          # both are valid, both lint clean, and only one of them is DNS-only —
+          # which is how the OR shipped here and in three sibling charts.
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          checked = 0
+          for path in sorted(glob.glob("rendered/*.yaml")):
+              for doc in yaml.safe_load_all(open(path)):
+                  if not doc or doc.get("kind") != "NetworkPolicy":
+                      continue
+                  for rule in (doc["spec"].get("egress") or []):
+                      ports = [str(p.get("port")) for p in (rule.get("ports") or [])]
+                      if "53" not in ports:
+                          continue
+                      checked += 1
+                      for peer in (rule.get("to") or []):
+                          if "namespaceSelector" in peer and "podSelector" not in peer:
+                              sys.exit(
+                                  f"{path}: the DNS egress rule has a namespaceSelector "
+                                  f"peer with no podSelector, so it allows egress to EVERY "
+                                  f"pod in that namespace. Put both selectors in one peer."
+                              )
+          if not checked:
+              sys.exit("no DNS egress rule found in rendered/ — this check verified nothing")
+          print(f"ok  {checked} DNS egress rule(s) scope to kube-dns, not to a whole namespace")
+          EOF
       - name: Assert no unfilled sentinels in rendered output
         uses: nanohype/nanohype/.github/actions/render-assert@main
         with:
