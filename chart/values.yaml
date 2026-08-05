@@ -146,10 +146,15 @@ networkPolicy:
   egress:
     # DNS
     - to:
+        # namespaceSelector and podSelector in ONE peer, so they AND. As two
+        # sibling list items they are separate peers and NetworkPolicy ORs them,
+        # which allows egress to every pod in kube-system plus every same-namespace
+        # pod labelled k8s-app=kube-dns — a policy that reads as "DNS only" and is
+        # not. The rendered object is valid either way; only the permission differs.
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
-        - podSelector:
+          podSelector:
             matchLabels:
               k8s-app: kube-dns
       ports:
