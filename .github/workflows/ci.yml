@@ -42,6 +42,18 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      # .editorconfig declares charset, LF endings, a final newline and no
+      # trailing whitespace. Biome formats TS and JSON, so those rules held for
+      # part of the tree and were unobserved everywhere else — YAML, HCL,
+      # Markdown, shell. This checks them across every git-tracked file.
+      #
+      # Indentation checks stay off: Go answers to gofmt, Terraform to tofu fmt,
+      # TS and JSON to biome, and Make requires tabs for recipes and spaces for
+      # the continuation lines inside them. A second opinion there would either
+      # be wrong or demand churn, so this gate takes the rules nothing else owns.
+      - name: Editorconfig
+        run: npm run editorconfig
+
       - name: Typecheck
         run: npx tsc --noEmit
 
