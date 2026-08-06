@@ -12,13 +12,14 @@ tasks:
   # === Composite ===
 
   ci:
-    desc: 'Full local CI: install, build, lint, typecheck, format:check, test, platform CRs, helm lint/template, docker build'
+    desc: 'Full local CI: install, build, lint, typecheck, format:check, editorconfig, test, platform CRs, helm lint/template, docker build'
     cmds:
       - task: install
       - task: build
       - task: lint
       - task: typecheck
       - task: format:check
+      - task: editorconfig
       - task: test
       - task: platform:validate
       - task: helm:lint
@@ -56,6 +57,11 @@ tasks:
     desc: Check formatting (Biome)
     cmds:
       - npm run format:check
+
+  editorconfig:
+    desc: Check every tracked file against .editorconfig (charset, LF, final newline, trailing whitespace)
+    cmds:
+      - npm run editorconfig
 
   test:
     desc: Run the test suite with coverage thresholds
