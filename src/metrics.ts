@@ -36,6 +36,26 @@ export function timing(name: string, ms: number, dimensions?: Record<string, str
 }
 
 /**
+ * Record a duration in SECONDS. `boundaries` is not optional in practice for
+ * anything that can run past ten seconds: OTel's default bucket edges top out at
+ * 10000, which is fine as milliseconds and wrong as seconds, and
+ * `histogram_quantile` cannot return a value above the highest finite edge.
+ */
+export function duration(
+  name: string,
+  seconds: number,
+  dimensions?: Record<string, string>,
+  boundaries?: readonly number[],
+): void {
+  metrics.duration(
+    name,
+    seconds,
+    dimensions,
+    boundaries ? { boundaries: [...boundaries] } : undefined,
+  );
+}
+
+/**
  * Record a unitless value into a histogram. `boundaries` sets explicit bucket
  * edges — required for 0–1 ratios, which otherwise inherit OTel's default
  * ms-scale buckets ([0,5,...]) and collapse every value into the first bucket.
@@ -55,9 +75,16 @@ export function counter(name: string, value = 1, dimensions?: Record<string, str
 
 // ─── Named convenience wrappers (hot paths) ───
 
-/** Wall-clock duration of one crawl run, in ms. */
-export function recordCrawlDuration(ms: number): void {
-  timing("crawl.duration_ms", ms);
+/**
+ * Bucket edges for a crawl run, in seconds. A full sweep is minutes, not
+ * milliseconds, so the OTel defaults would put every observation in the overflow
+ * bucket and make any quantile over this series meaningless.
+ */
+export const CRAWL_DURATION_BUCKETS = [10, 30, 60, 120, 300, 600, 1200] as const;
+
+/** Wall-clock duration of one crawl run, in seconds. */
+export function recordCrawlDuration(seconds: number): void {
+  duration("crawl.duration_seconds", seconds, undefined, CRAWL_DURATION_BUCKETS);
 }
 
 /** One crawled source, dimensioned by outcome (succeeded | failed). */

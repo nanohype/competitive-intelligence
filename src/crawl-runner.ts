@@ -67,7 +67,9 @@ export function createCrawlRunner(deps: CrawlRunnerDeps): () => Promise<CrawlOut
       // of the pod, and every later run — scheduled or triggered — would come
       // back "skipped" with nothing wrong that a restart wouldn't fix.
       crawlInProgress = false;
-      recordCrawlDuration(Date.now() - startedAt);
+      // Seconds, matching the instrument's declared unit — converting at the
+      // call site is half of the change, not an afterthought to it.
+      recordCrawlDuration((Date.now() - startedAt) / 1000);
     }
   };
 }

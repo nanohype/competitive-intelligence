@@ -26,7 +26,7 @@ On-call reference for the `competitive-intelligence` Platform tenant. Pairs with
 
 Grafana dashboard `competitive-intelligence` (from `chart/dashboards/`). Key panels:
 
-- **Crawl — duration + sources by outcome** (`crawl_duration_ms`, `crawl_sources_total{outcome}`)
+- **Crawl — duration + sources by outcome** (`crawl_duration_seconds`, `crawl_sources_total{outcome}`)
 - **Pipeline — chunks + diffs processed, change-score distribution**
 - **Alerts — fired vs send failures**
 - **Bedrock — token usage by kind + cache-hit ratio**
