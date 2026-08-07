@@ -9,7 +9,7 @@
  *
  * The lazy-instrument core (namespace qualification, per-name caching, no-op
  * degradation without a provider) is the vendored `@nanohype/runtime` metrics
- * module; this file is the app surface over it: the generic `timing` /
+ * module; this file is the app surface over it: the generic `duration` /
  * `distribution` / `counter` helpers plus named convenience wrappers for the
  * hot paths — crawl duration + per-source outcome, chunks/diffs processed,
  * change-score distribution, alerts fired + send failures, pgvector errors,
@@ -30,10 +30,6 @@ const metrics = createMetrics({
 });
 
 // ─── Generic helpers ───
-
-export function timing(name: string, ms: number, dimensions?: Record<string, string>): void {
-  metrics.timing(name, ms, dimensions);
-}
 
 /**
  * Record a duration in SECONDS. `boundaries` is not optional in practice for
