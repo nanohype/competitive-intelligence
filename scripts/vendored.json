@@ -2,7 +2,7 @@
   "_README": "Where the vendored copies in this repository come from. Every entry is a byte-identical copy of its source in nanohype/nanohype at `upstream.ref` \u2014 never hand-edit one; fixes land upstream with their tests and propagate outward. The pin is what makes `npm run sync:vendored:check` a verdict about this commit rather than about whatever nanohype's main branch happens to be when CI runs: without it, an unrelated merge upstream turns this repository's required check red. Whether the pin has fallen behind is a different question, asked on a schedule rather than on the blocking path.",
   "upstream": {
     "repository": "nanohype/nanohype",
-    "ref": "bcbb51d8850dcf7c19dcd0379d680c5c6bbbfc27"
+    "ref": "48c8ae870ff8d537e35feae90db00c45894b5462"
   },
   "entries": [
     {
