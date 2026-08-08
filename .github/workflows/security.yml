@@ -42,7 +42,7 @@ jobs:
       # the build gate (exit-code 1) makes Trivy mark the SARIF invocation
       # unsuccessful whenever a finding exists, which GitHub surfaces as
       # "Trivy is reporting errors" / a code-scanning configuration error.
-      - uses: aquasecurity/trivy-action@master
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           # Scoped to the Dockerfile — the one config artifact this repo owns
@@ -68,7 +68,7 @@ jobs:
       # step already downloaded (skip-db-update). Separate from the SARIF upload
       # so a finding fails CI without poisoning the code-scanning analysis.
       - name: gate on HIGH/CRITICAL
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: Dockerfile
@@ -80,10 +80,19 @@ jobs:
   trivy-fs:
     name: trivy (filesystem vuln scan — npm deps)
     runs-on: ubuntu-latest
+    env:
+      # trivy's npm/pnpm parser drops dev dependencies unless told otherwise, so
+      # this job reported zero findings while the lockfile carried a fixable HIGH.
+      # A build-time dependency still executes in CI with repo credentials, which
+      # is the surface this gate exists to cover, and the sibling repos scanning
+      # the same tree with osv-scanner have always counted them — the two tools
+      # disagreed on the same advisory in the same org. trivy-action exposes no
+      # input for it; the flag is only reachable as its TRIVY_-prefixed env var.
+      TRIVY_INCLUDE_DEV_DEPS: "true"
     steps:
       - uses: actions/checkout@v4
       # Report step: always upload a clean SARIF (exit-code 0) — see trivy-config.
-      - uses: aquasecurity/trivy-action@master
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -105,7 +114,7 @@ jobs:
           category: trivy-fs
       # Gate step: fail the build on HIGH/CRITICAL, reusing the cached DB.
       - name: gate on HIGH/CRITICAL
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
