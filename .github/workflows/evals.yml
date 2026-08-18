@@ -47,7 +47,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_EVAL_ROLE_ARN }}
-          aws-region: ${{ vars.EVAL_REGION || 'us-west-2' }}
+          aws-region: ${{ vars.EVAL_REGION || 'us-east-1' }}
 
       # The eval drives the same client the app does, against a ModelGateway.
       # In cluster that is the operator-published endpoint; CI has no cluster,
@@ -68,7 +68,7 @@ jobs:
       # Generated from platform.yaml, so the routes and model ids are the ones
       # this app deploys rather than a second copy that drifts quietly.
       - name: Render the gateway config
-        run: node scripts/render-eval-gateway.mjs --region "${{ vars.EVAL_REGION || 'us-west-2' }}" > /tmp/aigw.yaml
+        run: node scripts/render-eval-gateway.mjs --region "${{ vars.EVAL_REGION || 'us-east-1' }}" > /tmp/aigw.yaml
 
       # Backgrounded rather than a service container: it needs the AWS
       # credentials the OIDC step just put in this job's environment, which a

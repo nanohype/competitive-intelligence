@@ -20,7 +20,6 @@ import { bootstrapLlm, llmRegistry } from "./llm.js";
 
 function config(overrides: Partial<Config> = {}): Config {
   return {
-    awsRegion: "us-east-1",
     modelGatewayEndpoint: "http://gw.tenants-x.svc.cluster.local:8080",
     llmRoute: "default",
     embeddingRoute: "embeddings",

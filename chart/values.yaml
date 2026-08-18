@@ -196,7 +196,6 @@ networkPolicy:
 env:
   # Non-secret configuration. Secrets (Slack tokens, optional provider keys,
   # PGUSER/PGPASSWORD) come through the ExternalSecret.
-  AWS_REGION: us-west-2
   # The Platform's ModelGateway. The operator derives this from the Platform
   # name and publishes it on ModelGateway.status.endpoint; the app holds no AWS
   # model credential and reaches Bedrock only through here.

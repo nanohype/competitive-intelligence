@@ -54,8 +54,6 @@ const schema = z
     llmRoute: z.string().default(DEFAULT_LLM_ROUTE),
     embeddingRoute: z.string().default(DEFAULT_EMBEDDING_ROUTE),
 
-    awsRegion: z.string().default("us-east-1"),
-
     // The width of the pgvector column, forwarded to the embeddings route.
     embeddingDimensions: z.number().default(1024),
 
@@ -135,7 +133,6 @@ export function loadConfig(): Config {
     modelGatewayEndpoint: process.env.MODEL_GATEWAY_ENDPOINT,
     llmRoute: process.env.LLM_ROUTE,
     embeddingRoute: process.env.EMBEDDING_ROUTE,
-    awsRegion: process.env.AWS_REGION,
     embeddingDimensions: num(process.env.EMBEDDING_DIMENSIONS),
     vectorProvider: process.env.VECTOR_PROVIDER,
     databaseUrl: process.env.DATABASE_URL,
