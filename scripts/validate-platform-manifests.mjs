@@ -31,10 +31,11 @@
  *    `x-kubernetes-preserve-unknown-fields`).
  *
  * 2. SCOPE. `Tenant` is cluster-scoped and must carry no `metadata.namespace`;
- *    `Platform` and `BudgetPolicy` are namespaced and must carry one. Scope
- *    comes from the CRD's own `spec.scope`, not from a list kept here.
+ *    `Platform`, `BudgetPolicy` and `ModelGateway` are namespaced and must
+ *    carry one. Scope comes from the CRD's own `spec.scope`, not from a list
+ *    kept here.
  *
- * 3. CONSISTENCY. The three documents cross-reference each other by name, and
+ * 3. CONSISTENCY. The four documents cross-reference each other by name, and
  *    the chart repeats the same names as OTel resource attributes. A rename
  *    that lands in one place and not the others produces a Platform the
  *    operator cannot resolve or telemetry attributed to a tenant that does not
@@ -42,7 +43,16 @@
  *      - Platform.spec.tenant            == Tenant.metadata.name
  *      - Platform.spec.budget.name       == BudgetPolicy.metadata.name
  *      - BudgetPolicy.spec.platformRef   == Platform.metadata.name
+ *      - ModelGateway.spec.platformRef   == Platform.metadata.name
  *      - agents.tenant / agents.platform in every chart values file == both
+ *
+ *    Namespace agreement is part of the same property and is asserted with it.
+ *    Neither `BudgetPolicy.spec.platformRef` nor `ModelGateway.spec.platformRef`
+ *    has a namespace field — the CRDs declare `platformRef` as a bare `name` —
+ *    so each resolves its owning Platform within its own namespace and a
+ *    document authored in the wrong one applies cleanly and then resolves
+ *    nothing. For the gateway that is the whole model plane: the CRs land, the
+ *    apiserver is satisfied, and no route ever reconciles.
  *
  * Schemas come from `schemas/crd/`, vendored from the operator repo at the ref
  * pinned in `schemas/crd/source.json` by `scripts/sync-crd-schemas.mjs`. If
@@ -746,6 +756,31 @@ function validate(documents, schemas, chartValues) {
     }
   }
 
+  // A ModelGateway resolves its Platform the same way a BudgetPolicy does —
+  // `spec.platformRef` is a bare name, so the lookup is namespace-local. Both
+  // links are asserted for every declared gateway rather than for `gateways[0]`,
+  // because a second gateway authored into the wrong namespace would otherwise
+  // be the one document in this file nothing checks.
+  if (platform) {
+    for (const gateway of gateways) {
+      const where = `ModelGateway/${gateway.metadata?.name ?? "<unnamed>"}`;
+      if (gateway.spec?.platformRef?.name !== platform.metadata?.name) {
+        errors.push(
+          `${where}: spec.platformRef.name=\`${gateway.spec?.platformRef?.name}\` does not ` +
+            `match Platform \`${platform.metadata?.name}\``,
+        );
+      }
+      if (gateway.metadata?.namespace !== platform.metadata?.namespace) {
+        errors.push(
+          `${where} is in \`${gateway.metadata?.namespace}\` but Platform is in ` +
+            `\`${platform.metadata?.namespace}\` — spec.platformRef carries no namespace, so ` +
+            "the gateway resolves its Platform in its own namespace and finds nothing: the CRs " +
+            "apply cleanly and no route ever reconciles",
+        );
+      }
+    }
+  }
+
   if (tenant && platform) {
     checkChartValues(tenant.metadata?.name, platform.metadata?.name, chartValues, errors);
   }
@@ -934,6 +969,29 @@ function selfTest(documents, schemaBytes, sourceManifest, schemas, chartValues) 
         values[0].values.env.EMBEDDING_ROUTE = "vectors";
       },
       expect: /names no route on the ModelGateway/,
+    },
+    {
+      // The bug that shipped: the gateway was authored in another team's
+      // control-plane namespace. Every layer above passed — the document is
+      // schema-valid, it is namespaced as the CRD requires, its routes are
+      // granted by allowedModels, and the chart's endpoint matches — because
+      // none of those layers compares two documents' namespaces. `platformRef`
+      // has no namespace field to disagree with, which is exactly why the
+      // disagreement is invisible without this check.
+      name: "a ModelGateway authored in a different namespace from its Platform",
+      mutate: ({ docs }) => {
+        find(docs, "ModelGateway").metadata.namespace = "tenants-growth";
+      },
+      expect: /ModelGateway.* is in `tenants-growth` but Platform is in/,
+    },
+    {
+      // The other half of the same link. A gateway can sit in the right
+      // namespace and still name a Platform that is not there.
+      name: "a ModelGateway whose platformRef names a Platform this file does not declare",
+      mutate: ({ docs }) => {
+        find(docs, "ModelGateway").spec.platformRef.name = "digest-pipeline";
+      },
+      expect: /spec\.platformRef\.name=`digest-pipeline` does not match Platform/,
     },
   ];
 
