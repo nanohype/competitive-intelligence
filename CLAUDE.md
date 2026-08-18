@@ -74,7 +74,6 @@ task ci                  # full local gate (build + lint + typecheck + format:ch
 
 All config via env vars, validated by Zod in `src/config.ts`. See `.env.example`. In-cluster, secret values come from AWS Secrets Manager (`competitive-intelligence/<env>/*`) via the chart's ExternalSecret, synced into one Kubernetes Secret consumed `envFrom`; `.env.example` is for local dev only.
 
-- `AWS_REGION` — for the AWS services this app calls directly (Secrets Manager, S3). Not the model plane
 - `MODEL_GATEWAY_ENDPOINT` — the Platform's ModelGateway. Every model call goes here; the app holds no model credential of any kind. The routes resolve to `us.anthropic.claude-sonnet-5` for analysis and `amazon.titan-embed-text-v2:0` for embeddings, declared on the `ModelGateway` CR in `platform.yaml` — change a model there, not here. This is the gateway *root*: each client-facing API sits under its own prefix, so the embeddings provider requests `/v1/embeddings` off it directly while the Messages client is handed `anthropicBaseUrl()` for the `/anthropic/v1/messages` endpoint
 - `LLM_ROUTE` / `EMBEDDING_ROUTE` — route names on that gateway (defaults `default` / `embeddings`), not model IDs. The `ModelGateway` CR maps each to a Bedrock model
 - `EMBEDDING_DIMENSIONS` — the pgvector column width, forwarded to the embeddings route and asserted on every returned vector (default 1024, matching Titan v2)
