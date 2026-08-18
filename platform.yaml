@@ -134,7 +134,7 @@ apiVersion: agents.nanohype.dev/v1alpha1
 kind: ModelGateway
 metadata:
   name: competitive-intelligence
-  namespace: tenants-growth
+  namespace: tenants-strategy
 spec:
   platformRef:
     name: competitive-intelligence
