@@ -51,7 +51,17 @@ jobs:
       # TS and JSON to biome, and Make requires tabs for recipes and spaces for
       # the continuation lines inside them. A second opinion there would either
       # be wrong or demand churn, so this gate takes the rules nothing else owns.
+      # The npm package is a JS shim, not the checker. On first run it resolves
+      # the real Go binary through the GitHub releases API using an Octokit
+      # client built from GITHUB_TOKEN. Unauthenticated, that request is rate
+      # limited by source IP — which on a hosted runner is shared with every
+      # other Actions customer on the host, so a required check's outcome
+      # depended on what strangers did with that address in the preceding hour.
+      # The token is proof of who is asking; it needs no permission beyond the
+      # default read.
       - name: Editorconfig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run editorconfig
 
       - name: Typecheck
