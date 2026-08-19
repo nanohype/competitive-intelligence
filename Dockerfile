@@ -1,4 +1,11 @@
-FROM node:24-alpine AS builder
+# Base image pinned by digest, not by tag. `node:24-alpine` is a moving tag —
+# it repoints on every 24.x patch and every Alpine rebuild, so two builds of
+# the same commit can differ. The GitHub Actions in this repo are already
+# SHA-pinned; this is the same discipline for the one input that was not.
+# This is the multi-arch index digest (linux/amd64, arm64, s390x), NOT a
+# single-platform manifest — pinning the latter builds on one architecture
+# and fails on the others. Renovate maintains it as a `digest` update.
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS builder
 WORKDIR /app
 
 # Install and build the TypeScript app.
@@ -10,7 +17,7 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:24-alpine AS runner
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
