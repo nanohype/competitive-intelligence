@@ -3,7 +3,7 @@
   "upstream": {
     "repository": "nanohype/eks-agent-platform",
     "path": "operators/config/crd/bases",
-    "ref": "96bb2f59fc3e40b47d9396a9a3af605d787c4f20"
+    "ref": "8d5357892a9b33e84d746dd9c6f482bd222e5745"
   },
   "generator": "controller-gen v0.21.0",
   "files": [
@@ -13,7 +13,7 @@
     },
     {
       "file": "platform.nanohype.dev_platforms.yaml",
-      "sha256": "08ef2f911b9b09e6a05591d9f2ed238508a8b2f7c90e0dc030477a652caf2788"
+      "sha256": "779b564630bf3ce0f659462889e0c8a93cb60081be915a141adf631a3f55b5cd"
     },
     {
       "file": "governance.nanohype.dev_budgetpolicies.yaml",
