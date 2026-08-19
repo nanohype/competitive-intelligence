@@ -69,18 +69,42 @@ describe("analyzeChanges", () => {
     expect(a.significance).toBe("medium");
   });
 
-  it("clamps an invalid significance to low while keeping the parsed summary", async () => {
-    const llm = fakeLlm(JSON.stringify({ summary: "Z", significance: "urgent", signals: ["a"] }));
-    const a = await analyzeChanges(diff, llm);
+  // A field the schema rejects is a parse failure, not a value to repair. The
+  // schema used to `.catch()` these into `low` / `[]` and return the object as
+  // if the model had answered correctly, so a model that had started emitting
+  // garbage was reported as a confident low-significance finding.
+  it("falls back to raw text when significance is not one of the four levels", async () => {
+    const raw = JSON.stringify({ summary: "Z", significance: "urgent", signals: ["a"] });
+    const a = await analyzeChanges(diff, fakeLlm(raw));
+    expect(a.summary).toBe(raw.slice(0, 500)); // the raw-text fallback, NOT "Z"
     expect(a.significance).toBe("low");
-    expect(a.summary).toBe("Z"); // from parsed JSON, NOT the raw-text fallback
-    expect(a.signals).toEqual(["a"]);
+    expect(a.signals).toEqual([]);
   });
 
-  it("defaults a missing summary", async () => {
-    const llm = fakeLlm(JSON.stringify({ significance: "low", signals: [] }));
+  it("falls back to raw text when summary is missing", async () => {
+    const raw = JSON.stringify({ significance: "low", signals: [] });
+    const a = await analyzeChanges(diff, fakeLlm(raw));
+    expect(a.summary).toBe(raw.slice(0, 500)); // not the old "Analysis unavailable" default
+  });
+
+  it("falls back to raw text when signals is not an array of strings", async () => {
+    const raw = JSON.stringify({ summary: "Z", significance: "high", signals: [{ a: 1 }] });
+    const a = await analyzeChanges(diff, fakeLlm(raw));
+    expect(a.summary).toBe(raw.slice(0, 500));
+    expect(a.signals).toEqual([]);
+  });
+
+  // The distinction the fallback cannot express on its own: a well-formed `low`
+  // and a rejected response both leave `significance: "low"` downstream. This
+  // pins that the well-formed one still keeps its own summary, which is the
+  // only thing that tells them apart at the call site.
+  it("keeps a genuine low-significance analysis distinct from the fallback", async () => {
+    const llm = fakeLlm(
+      JSON.stringify({ summary: "Minor copy edit", significance: "low", signals: [] }),
+    );
     const a = await analyzeChanges(diff, llm);
-    expect(a.summary).toBe("Analysis unavailable");
+    expect(a.summary).toBe("Minor copy edit");
+    expect(a.significance).toBe("low");
   });
 
   it("falls back to raw text on non-JSON output", async () => {

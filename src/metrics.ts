@@ -128,6 +128,20 @@ export function recordPgVectorError(): void {
   counter("pgvector.errors");
 }
 
+/**
+ * The model returned something `analysisSchema` would not accept, so the
+ * analysis fell back to raw text at `low` significance.
+ *
+ * This is the metric that makes a model regression visible. Severity is a field
+ * the model fills in, and the fallback emits `low` — so without a counter here,
+ * a model that has started garbling its output is indistinguishable from a
+ * competitor who has published nothing interesting. One is a quiet week and the
+ * other is the radar's severity signal being wrong on every alert it labels.
+ */
+export function recordAnalysisParseFailure(reason: "not_json" | "schema"): void {
+  counter("analysis.parse_failures", 1, { reason });
+}
+
 export type TokenKind = "input" | "output" | "cache_read" | "cache_write";
 
 /**
