@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { anthropicBaseUrl, loadConfig } from "./config.js";
 
@@ -26,6 +28,36 @@ const CONFIG_ENV_KEYS = [
   "NODE_ENV",
   "LOG_LEVEL",
 ] as const;
+
+// `CONFIG_ENV_KEYS` is load-bearing rather than decorative: `beforeEach` clears
+// every key in it so the ambient environment — or a developer's local `.env` —
+// cannot reach into the assertions below. A key missing from the list is
+// therefore not a tidiness problem, it is a test that reads the machine it runs
+// on. This suite has already been wrong in that exact way: `MCP_AUTH`,
+// `WORKOS_AUTHKIT_ISSUER`, `MCP_PUBLIC_URL` and `MCP_AUTH_SCOPES` were absent
+// while `loadConfig` read all four, alongside six keys it had stopped reading.
+//
+// So the list's claim is asserted rather than maintained by hand. `config.ts` is
+// the source of truth and this reads it: any `process.env.X` in that module has
+// to appear here, and anything here has to still be read there. Both directions
+// matter — a stale key is dead weight that suggests coverage the suite does not
+// have, and a missing one is a live isolation hole.
+describe("CONFIG_ENV_KEYS", () => {
+  it("is exactly the set of env vars config.ts reads", () => {
+    const source = readFileSync(fileURLToPath(new URL("./config.ts", import.meta.url)), "utf8");
+    const read = new Set(
+      [...source.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((match) => match[1]),
+    );
+
+    const listed = new Set<string>(CONFIG_ENV_KEYS);
+    const missing = [...read].filter((key) => !listed.has(key)).sort();
+    const stale = [...listed].filter((key) => !read.has(key)).sort();
+
+    // Asserted as one object so a failure names both directions at once rather
+    // than stopping at whichever happens to be checked first.
+    expect({ missing, stale }).toEqual({ missing: [], stale: [] });
+  });
+});
 
 describe("loadConfig", () => {
   let saved: NodeJS.ProcessEnv;
