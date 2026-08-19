@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { logger } from "../logger.js";
+import { recordAnalysisParseFailure } from "../metrics.js";
 import type { DiffResult } from "../pipeline/differ.js";
 import type { LlmProvider } from "../providers/llm.js";
 import type { SearchResult } from "../providers/vectors.js";
@@ -14,10 +16,18 @@ export interface ChangeAnalysis {
 
 // The model returns JSON — validate it at this trust boundary like every other
 // input (config, sources). Unknown shapes fall back to the raw-text branch.
+//
+// Every field is strict on purpose. `.catch()` on `significance` and `signals`
+// used to absorb a malformed value into `low` / `[]` and return the object as
+// though the model had answered correctly, which made the one branch that
+// reports a parse problem unreachable for everything except non-JSON. A field
+// this schema will not accept is a parse failure, exactly as malformed JSON is;
+// `safeParseAnalysis` returns null for both and the caller handles them the
+// same way.
 const analysisSchema = z.object({
-  summary: z.string().default("Analysis unavailable"),
-  significance: z.enum(["low", "medium", "high", "critical"]).catch("low"),
-  signals: z.array(z.string()).catch([]),
+  summary: z.string(),
+  significance: z.enum(["low", "medium", "high", "critical"]),
+  signals: z.array(z.string()),
 });
 
 const ANALYSIS_SYSTEM = `You are a competitive intelligence analyst. You analyze changes detected on competitor websites and extract actionable intelligence signals.
@@ -62,7 +72,10 @@ ${fenceUntrusted(newContent.slice(0, 8000), "crawled page content")}`;
 
   const response = await llm.chat(ANALYSIS_SYSTEM, prompt);
 
-  const parsed = safeParseAnalysis(stripCodeFences(response.text));
+  const parsed = safeParseAnalysis(stripCodeFences(response.text), {
+    sourceId: diff.sourceId,
+    competitor: diff.competitor,
+  });
   if (parsed) {
     return {
       sourceId: diff.sourceId,
@@ -73,7 +86,11 @@ ${fenceUntrusted(newContent.slice(0, 8000), "crawled page content")}`;
     };
   }
 
-  // Not valid JSON — fall back to the raw model text as the summary.
+  // The model did not answer in the contract — not JSON, or JSON the schema
+  // rejects. Fall back to its raw text as the summary. `low` here is the
+  // absence of a severity judgement rather than a judgement of "low", which is
+  // why `safeParseAnalysis` counts the event: downstream this value is
+  // indistinguishable from a model that looked and found nothing.
   return {
     sourceId: diff.sourceId,
     competitor: diff.competitor,
@@ -83,16 +100,34 @@ ${fenceUntrusted(newContent.slice(0, 8000), "crawled page content")}`;
   };
 }
 
-/** Parse + validate the model's analysis JSON; null when it isn't JSON at all. */
-function safeParseAnalysis(text: string): z.infer<typeof analysisSchema> | null {
+/**
+ * Parse + validate the model's analysis JSON; null when it is not JSON, or is
+ * JSON the schema rejects. Both are the same event to the caller — the model did
+ * not answer in the contract — and both are counted, because the fallback the
+ * caller then takes is indistinguishable from a genuine low-significance result.
+ */
+function safeParseAnalysis(
+  text: string,
+  context: { sourceId: string; competitor: string },
+): z.infer<typeof analysisSchema> | null {
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
+    logger.warn("analysis response was not JSON — falling back to raw text", context);
+    recordAnalysisParseFailure("not_json");
     return null;
   }
   const result = analysisSchema.safeParse(json);
-  return result.success ? result.data : null;
+  if (!result.success) {
+    logger.warn("analysis response did not match the schema — falling back to raw text", {
+      ...context,
+      issues: result.error.issues.map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`),
+    });
+    recordAnalysisParseFailure("schema");
+    return null;
+  }
+  return result.data;
 }
 
 // ─── Query answering ───
