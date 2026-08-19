@@ -200,6 +200,7 @@
       "id": 1,
       "title": "Crawl \u2014 duration p50 / p95 / p99",
       "type": "timeseries",
+      "description": "Source: OTel histogram competitive_intelligence_crawl_duration_seconds. Unit is seconds, matching the series \u2014 a panel declaring ms renders a 45-second crawl as '45 ms', which reads as excellent.",
       "gridPos": {
         "x": 0,
         "y": 7,
@@ -225,7 +226,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms"
+          "unit": "s"
         }
       }
     },
