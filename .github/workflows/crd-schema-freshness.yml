@@ -20,6 +20,13 @@ name: crd-schema-freshness
 # anything else means the check could not reach a verdict at all — an
 # unreachable upstream must not be filed as confirmed drift, nor drift dismissed
 # as an unreachable upstream.
+#
+# What the report says has to survive the gap between runs. The body below is
+# re-edited weekly, but it is read on whatever day someone opens the issue, so a
+# commit resolved by one run and printed here would be offered as the newest one
+# until the next. The remediation therefore names `--ref=latest`, which resolves
+# upstream as the re-vendor runs; `node scripts/sync-crd-schemas.mjs --self-test`
+# holds that on the emitted bytes, in pull-request CI.
 on:
   schedule:
     - cron: '0 13 * * 1' # Mondays, 13:00 UTC
@@ -39,15 +46,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve the pinned operator repository name
+        id: pin
+        run: echo "repo=$(jq -r .upstream.repository schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
+
+      # Full history, unlike the blocking gate. Freshness compares two commits —
+      # the pin and the newest one touching the schemas — so both have to be
+      # reachable, and a shallow clone fails loudly rather than reporting
+      # "current". The script also refuses a checkout whose newest schema commit
+      # the pin does not descend from, since nothing here fetches. Reading
+      # upstream from a checkout runs this job through the same seam the gate's
+      # self-test drives, rather than through the api.github.com path no
+      # hermetic test can exercise.
+      - name: Checkout eks-agent-platform at its default branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pin.outputs.repo }}
+          fetch-depth: 0
+          path: .eks-agent-platform
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      # No install step: the script uses only Node built-ins, and reads both
-      # sides from raw.githubusercontent.com — the pinned ref and the default
-      # branch. An unreachable upstream fails rather than reporting "current".
+      # No install step: the script uses only Node built-ins and git. An
+      # upstream it cannot read fails rather than reporting "current".
       - name: Compare the pin against upstream
         id: freshness
+        env:
+          EKS_AGENT_PLATFORM_DIR: .eks-agent-platform
         run: |
           set -uo pipefail
           # Two ways to lose this exit code, and both have to be closed.
@@ -110,9 +137,12 @@ jobs:
           Re-vendor and re-validate:
 
           \`\`\`
-          npm run schemas:sync -- --ref=<sha>
+          npm run schemas:sync -- --ref=latest
           npm run platform:validate
           \`\`\`
+
+          \`latest\` resolves the newest upstream commit touching those schemas at the moment the
+          re-vendor runs, so this instruction holds on whatever day it is read.
 
           Read the schema diff before merging — a new constraint upstream usually implies a
           \`platform.yaml\` change here. This issue closes itself once the pin is current.
