@@ -72,6 +72,62 @@ no network. It does not catch a clone forked *at* the pin, which is why the
 scheduled workflow should keep supplying a fresh default-branch checkout rather
 than relying on the guard — a limit worth stating rather than papering over.
 
+## nanohype/.github — the editorconfig-gate adoption table stops at the workflow
+
+The per-repository table in that repository's REPORT.md names the workflow, the
+job and the step to remove, and says "Nothing else." For this repository that is
+one call site short: `npm run editorconfig` was also a Taskfile target
+(`task editorconfig`) and a step in `task ci`, so dropping the npm script by the
+table alone leaves a task that invokes a script no longer declared — `task ci`
+fails at that step rather than at a formatting defect.
+
+Worth naming in the table for any consumer carrying a Taskfile, alongside the
+`package.json` and workflow entries it already carries. The wider question the
+adoption raises and the table does not settle: a repository whose `task ci` is
+documented as running what CI blocks on cannot keep that claim once one gate
+moves into a shared action, so the desc has to say which gate it no longer runs.
+
+## The merge order and the editorconfig gate deadlock each other
+
+The estate's ruling is that a gate failing on an advisory a pull request did not
+introduce is the gate working, and the bump lands in its own pull request cut
+from main, merged first, after which the branch takes main. The `fast-uri` /
+`qs` bump follows it and is cut from main.
+
+Its only failing check is not the bump. It is the `Editorconfig` step in
+`build + lint + typecheck + test`:
+
+```
+> editorconfig-checker -disable-indent-size -disable-indentation
+Failed to download binary:
+Error: The binary 'ec-linux-amd64*' not found
+```
+
+That is one of the three failure modes the shared editorconfig gate exists to
+remove, on a tree with no formatting defect. `merge gate` fails only because it
+needs that job.
+
+The deadlock is in the order. The bump has to merge before the freshness branch
+takes main, and it cannot go green while main still runs the npm shim — and the
+adoption that removes the shim is a commit on the freshness branch, which by the
+same order merges second. Neither can be first.
+
+Whichever way it is broken, the fix is not to fold anything together:
+
+- Cut the editorconfig adoption out of the freshness branch into its own pull
+  request from main and merge that first. It is a fix for a defect neither of
+  the other two introduced, which is the same shape the ruling already
+  prescribes for the bump, so this is the ruling applied one level up rather
+  than an exception to it. The bump then reruns green, and the freshness branch
+  keeps only what it argues.
+- Or merge the bump with the editorconfig check knowingly red, which trades a
+  legible order for an override and leaves the next pull request meeting the
+  same wall.
+
+The first is the one that leaves nothing owed. Naming it here rather than acting
+on it: the branch this file sits on is not the place to reorganise which branch
+carries what.
+
 ## What the reference implementation does not cover
 
 `nanohype/portal` holds this property in `scripts/freshness_test.sh`. Three
