@@ -43,26 +43,29 @@ jobs:
         run: npm run format:check
 
       # .editorconfig declares charset, LF endings, a final newline and no
-      # trailing whitespace. Biome formats TS and JSON, so those rules held for
-      # part of the tree and were unobserved everywhere else — YAML, HCL,
+      # trailing whitespace. Biome formats TS and JSON, so those rules hold for
+      # part of the tree and are unobserved everywhere else — YAML, HCL,
       # Markdown, shell. This checks them across every git-tracked file.
       #
-      # Indentation checks stay off: Go answers to gofmt, Terraform to tofu fmt,
+      # Indentation stays delegated: Go answers to gofmt, Terraform to tofu fmt,
       # TS and JSON to biome, and Make requires tabs for recipes and spaces for
       # the continuation lines inside them. A second opinion there would either
-      # be wrong or demand churn, so this gate takes the rules nothing else owns.
-      # The npm package is a JS shim, not the checker. On first run it resolves
-      # the real Go binary through the GitHub releases API using an Octokit
-      # client built from GITHUB_TOKEN. Unauthenticated, that request is rate
-      # limited by source IP — which on a hosted runner is shared with every
-      # other Actions customer on the host, so a required check's outcome
-      # depended on what strangers did with that address in the preceding hour.
-      # The token is proof of who is asking; it needs no permission beyond the
-      # default read.
+      # be wrong or demand churn, so this gate takes the rules nothing else owns
+      # and names the ones it hands back.
+      #
+      # The gate reads the tree. It resolves no release and downloads no binary,
+      # so the verdict a merge waits on does not depend on a third party
+      # answering — and it distinguishes its two non-zero verdicts, so a red
+      # check says whether a file is malformed or whether nothing was checked
+      # at all. It self-tests before it reads anything: a gate that has quietly
+      # stopped rejecting passes every tree, and the tree it passed looks
+      # exactly like one that conforms.
+      #
+      # Shared with the rest of the estate rather than copied into it, so an
+      # edge case is fixed once and reaches every consumer as a pin move with a
+      # diff, instead of as five hand-copied readings of one rule.
       - name: Editorconfig
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run editorconfig
+        uses: nanohype/.github/actions/editorconfig-gate@b2eada74413fcc9f3042f22126ee5b350a2b846e
 
       - name: Typecheck
         run: npx tsc --noEmit
