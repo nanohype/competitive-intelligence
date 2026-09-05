@@ -106,8 +106,8 @@ async function main(): Promise<void> {
   logger.info("health server listening", { port: config.port });
 
   // ─── MCP server ───
-  await mcpServer.listen(config.mcpPort);
-  logger.info("mcp server listening", { port: config.mcpPort });
+  const mcpPort = await mcpServer.listen(config.mcpPort);
+  logger.info("mcp server listening", { port: mcpPort });
 
   // ─── Start ───
   scheduler.start();
