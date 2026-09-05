@@ -67,7 +67,7 @@ npm run platform:validate # validate platform.yaml against the vendored operator
 npm run schemas:sync # re-vendor those schemas + digests from the pinned eks-agent-platform ref
 npm run schemas:check # blocking gate: vendored bytes == upstream at the pinned ref
 npm run schemas:freshness # scheduled-only: has the pin fallen behind upstream? never a merge gate
-task ci                  # full local gate (build + lint + typecheck + format:check + test + platform CRs + helm + docker)
+task ci                  # every gate that needs only this checkout (editorconfig runs in CI, from nanohype/.github)
 ```
 
 ## Configuration
