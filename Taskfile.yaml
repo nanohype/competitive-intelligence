@@ -21,6 +21,7 @@ tasks:
       - task: format:check
       - task: test
       - task: platform:validate
+      - task: schemas:selftest
       - task: helm:lint
       - task: helm:template
       - task: docker:build
@@ -74,9 +75,9 @@ tasks:
       - node scripts/validate-platform-manifests.mjs --self-test
 
   schemas:sync:
-    desc: Re-vendor the operator CRD schemas + digests from the ref pinned in schemas/crd/source.json
+    desc: 'Re-vendor the operator CRD schemas + digests (usage: task schemas:sync -- --ref=<sha>|--ref=latest)'
     cmds:
-      - node scripts/sync-crd-schemas.mjs
+      - node scripts/sync-crd-schemas.mjs {{.CLI_ARGS}}
 
   schemas:check:
     desc: Assert the vendored CRD schemas are byte-identical to the pinned upstream ref
@@ -87,6 +88,15 @@ tasks:
     desc: Report whether the pinned operator ref has fallen behind upstream (never a merge gate)
     cmds:
       - node scripts/sync-crd-schemas.mjs --freshness
+
+  schemas:selftest:
+    desc: Prove the freshness report names a command that resolves upstream, and that it works
+    cmds:
+      # Builds a real upstream repository whose history it knows, runs the
+      # report against it, and asserts on the bytes: no commit id it resolved,
+      # a remediation naming `--ref=latest`, and that command landing the pin on
+      # the newest commit that touched the schemas.
+      - node scripts/sync-crd-schemas.mjs --self-test
 
   # === Helm ===
 

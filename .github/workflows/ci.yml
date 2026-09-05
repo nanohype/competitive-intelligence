@@ -238,17 +238,30 @@ jobs:
           node-version: '24'
 
       # Compares every vendored copy byte-for-byte against the operator repo at
-      # the pinned SHA. The script refuses to run if the checkout's HEAD is not
-      # that SHA, because a comparison against some other commit is a verdict
-      # about a commit this repo never pinned. Nothing is skipped: an
-      # unreachable checkout fails the job. Whether the pin itself has fallen
-      # behind upstream is asked by the scheduled crd-schema-freshness workflow,
-      # off the blocking path, so this check stays a pure function of the commit
-      # under test.
+      # the pinned SHA, read out of the object database at that ref rather than
+      # from the checkout's working tree — so the verdict is about the commit
+      # this repo pinned whatever the checkout has out. A ref the checkout
+      # cannot resolve is an error. Nothing is skipped: an unreachable checkout
+      # fails the job. Whether the pin itself has fallen behind upstream is
+      # asked by the scheduled crd-schema-freshness workflow, off the blocking
+      # path, so this check stays a pure function of the commit under test.
       - name: Vendored CRD schemas match the pinned upstream commit
         run: npm run schemas:check
         env:
           EKS_AGENT_PLATFORM_DIR: .eks-agent-platform
+
+      # The freshness report is copied verbatim into an issue body that is
+      # re-edited weekly and read on whatever day someone opens it, so a commit
+      # it resolved and printed is offered as the newest one long after it stops
+      # being — an instruction that re-vendors to a stale ref while closing the
+      # issue that warned about it. This builds a real upstream repository whose
+      # history it knows, runs the report against it, and asserts on the emitted
+      # bytes: no commit the run resolved, a remediation naming `--ref=latest`,
+      # and that command landing the pin on the newest commit touching the
+      # schemas. It needs no network, so it belongs on the blocking path even
+      # though the report it constrains runs weekly.
+      - name: The freshness report names a command, not a commit
+        run: npm run schemas:selftest
 
   docker:
     name: docker build (no push)
