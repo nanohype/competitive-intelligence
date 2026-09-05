@@ -1,5 +1,3 @@
-import http from "node:http";
-import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { type CryptoKey, generateKeyPair, SignJWT } from "jose";
@@ -61,18 +59,6 @@ function makeDeps(): McpToolDeps {
   };
 }
 
-async function port(server: McpHttpServer): Promise<number> {
-  // Listen on an ephemeral port by asking the underlying server; createMcpHttpServer
-  // wraps node http, so bind :0 and read it back through a throwaway probe server
-  // is not exposed — instead pick a free port via a scratch server.
-  const scratch = http.createServer();
-  await new Promise<void>((resolve) => scratch.listen(0, resolve));
-  const p = (scratch.address() as AddressInfo).port;
-  await new Promise<void>((resolve) => scratch.close(() => resolve()));
-  await server.listen(p);
-  return p;
-}
-
 describe("MCP streamable-HTTP server (end-to-end)", () => {
   let server: McpHttpServer;
   let client: Client;
@@ -80,8 +66,7 @@ describe("MCP streamable-HTTP server (end-to-end)", () => {
 
   beforeEach(async () => {
     server = createMcpHttpServer(makeDeps());
-    const p = await port(server);
-    url = new URL(`http://127.0.0.1:${p}/mcp`);
+    url = new URL(`http://127.0.0.1:${await server.listen(0)}/mcp`);
     client = new Client({ name: "test-client", version: "0.0.0" });
     await client.connect(new StreamableHTTPClientTransport(url));
   });
@@ -89,6 +74,24 @@ describe("MCP streamable-HTTP server (end-to-end)", () => {
   afterEach(async () => {
     await client.close();
     await server.close();
+  });
+
+  it("resolves with the port the kernel bound, which is the one it is serving on", async () => {
+    // The number comes back from the bind rather than from a prior lookup, so
+    // there is no interval in which it is this test's answer and not yet this
+    // server's socket.
+    expect(url.port).not.toBe("0");
+    const res = await fetch(`http://127.0.0.1:${url.port}/mcp`, { method: "GET" });
+    expect(res.status).toBeGreaterThan(0);
+  });
+
+  it("rejects rather than hanging when the port is already bound", async () => {
+    // The listening callback never fires for a failed bind, so a `listen` that
+    // waited only on it would leave the caller pending and the error unhandled.
+    // Nothing races here: the first server holds the port for the assertion's
+    // whole life, which is the property this file's binding now rests on.
+    const second = createMcpHttpServer(makeDeps());
+    await expect(second.listen(Number(url.port))).rejects.toThrow(/EADDRINUSE/);
   });
 
   it("advertises the four tools over the transport", async () => {
@@ -159,8 +162,7 @@ describe("MCP streamable-HTTP server (OAuth enabled)", () => {
     const verify = createWorkosVerifier({ issuer: ISSUER, audience: RESOURCE, jwks: publicKey });
     const oauth = createOAuthProtection({ issuer: ISSUER, resource: RESOURCE }, verify);
     server = createMcpHttpServer(makeDeps(), oauth);
-    const p = await port(server);
-    base = `http://127.0.0.1:${p}`;
+    base = `http://127.0.0.1:${await server.listen(0)}`;
   });
 
   afterEach(async () => {
