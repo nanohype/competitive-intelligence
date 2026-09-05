@@ -1,4 +1,5 @@
 import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { logger, toMessage } from "../logger.js";
@@ -24,7 +25,16 @@ export function createMcpServer(deps: McpToolDeps): Server {
 }
 
 export interface McpHttpServer {
-  listen(port: number): Promise<void>;
+  /**
+   * Bind and resolve with the port actually bound. Pass 0 to let the kernel
+   * choose one: it is held from the moment it is assigned, so there is no
+   * instant at which the port is decided and not yet listening. Choosing a free
+   * port by some other means and binding it afterwards cannot offer that — the
+   * answer is true when it is read and something else may take the port before
+   * the bind, and no retry closes that window because the window is what a
+   * retry re-enters.
+   */
+  listen(port: number): Promise<number>;
   close(): Promise<void>;
 }
 
@@ -46,7 +56,22 @@ export function createMcpHttpServer(deps: McpToolDeps, oauth?: OAuthProtection):
   });
 
   return {
-    listen: (port) => new Promise<void>((resolve) => httpServer.listen(port, resolve)),
+    listen: (port) =>
+      new Promise<number>((resolve, reject) => {
+        // A bind that fails emits `error` and never calls the listening
+        // callback. The caller is waiting for a port, so that has to settle the
+        // promise rather than leave it pending and the error unhandled; the
+        // listener comes off on success so a later runtime error is not
+        // rerouted into a promise nobody is holding.
+        httpServer.once("error", reject);
+        httpServer.listen(port, () => {
+          httpServer.removeListener("error", reject);
+          // `listen` was given a number, so this is a TCP socket and the
+          // listening callback fires only after the bind — where `address()`
+          // is an AddressInfo rather than a pipe's path or null.
+          resolve((httpServer.address() as AddressInfo).port);
+        });
+      }),
     close: () =>
       new Promise<void>((resolve, reject) =>
         httpServer.close((err) => (err ? reject(err) : resolve())),
