@@ -87,49 +87,44 @@ adoption raises and the table does not settle: a repository whose `task ci` is
 documented as running what CI blocks on cannot keep that claim once one gate
 moves into a shared action, so the desc has to say which gate it no longer runs.
 
-## Two pre-existing failures inside one gate job
+## A merge-order rule reads branches; the gate reads jobs
 
-`build + lint + typecheck + test` runs `npm audit` at step 4 and the
-editorconfig check at step 7. Main fails both, for reasons that share nothing
-but the job:
+**A merge-order rule that assumes each branch fixes an independent defect fails
+when two defects share a CI job, because the job is the unit the gate reads, not
+the branch.**
 
-```
-step 4  fast-uri 3.0.0 - 3.1.5   high      (four advisories)
-        qs       2.2.5 - 6.15.3  moderate  (two advisories)
+That is the general form. The commit that cleared both failures in
+`build + lint + typecheck + test` records the specific case — two unrelated
+defects, `npm audit` at step 4 and the editorconfig download at step 7, and why
+both fixes ship in one change rather than two. What that message does not carry,
+and the next repository to meet this should not have to re-derive, is the part
+below.
 
-step 7  editorconfig-checker: Failed to download binary
-        Error: The binary 'ec-linux-amd64*' not found
-```
+**Splitting was tried first, and moved the deadlock rather than breaking it.**
+The estate's rule — a pre-existing failure lands in its own pull request cut
+from main, merged first — is sound, and applying it produced two branches that
+each inherited the other's half. The advisory branch cleared step 4 and failed
+step 7. The adoption branch failed step 4 and **skipped step 7**, so the check it
+existed to repair was never executed. Neither could go green by doing more of
+its own argument, and the second cut cost as much as the first.
 
-The consequence is not an ordering preference. A branch fixing only the
-advisories clears step 4 and fails step 7. A branch fixing only the download
-never reaches step 7 — step 4 fails first and the remaining steps are skipped,
-so the check it repairs is not even executed. The job is inside a required merge
-gate, so no branch cut from main can merge unless it fixes both, and neither
-branch can go green by doing more of its own argument.
+**The first failing step hides the rest**, which is why the cost is discovered
+one cut at a time rather than up front. The adoption branch's run reported one
+failure and concealed the fact that it had not tested its own fix. A reading of
+that run that stopped at "fails on the advisories, which the other branch fixes"
+was the reading that produced a second dead branch.
 
-Cutting the editorconfig adoption into its own pull request from main was tried
-and moved the deadlock rather than breaking it: that branch inherited the
-advisories exactly as the advisory branch inherited the download. Its CI run is
-the evidence — step 4 failed, step 7 skipped.
+Two ways to make the rule true again, neither of them an exception to it:
 
-Both fixes therefore ship in one branch. That is not an exception to the rule
-that a branch fixes one thing; the rule is about reviewability, and a message
-that states the coupling and separates the two arguments still gives a reader
-one at a time. What the rule cannot do is forbid landing either fix, which is
-what keeping them apart amounts to when a single job holds both verdicts.
+- Split the job, so each independent check is its own required verdict. Then a
+  pre-existing failure blocks the branches that share its check and no others,
+  and every fix lands in its own change as the rule intends.
+- Or run the steps so a later one still reports when an earlier one fails. That
+  does not restore independence, but it makes the full cost of main's state
+  visible on the first run instead of the third.
 
-The alternative — merging one of them with its gate knowingly red — was
-available and is worse. An override is a decision whoever hits it next has to
-make again, with nothing recording that it was already made, and here it would
-also have merged a gate nobody had yet seen pass.
-
-What generalises: a required job that runs several independent checks in
-sequence makes those checks one verdict, and any pre-existing failure in it
-blocks every branch until every one of them is fixed. The first failing step
-also hides the rest, so the cost is discovered one cut at a time. Splitting the
-job, or running its steps so a later one still reports when an earlier one
-fails, would make each defect land in its own change again.
+Until one of those holds, the test before cutting a branch is not "is this
+defect independent of that one" but "do they share a required job".
 
 ## What the reference implementation does not cover
 
