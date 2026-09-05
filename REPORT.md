@@ -87,46 +87,49 @@ adoption raises and the table does not settle: a repository whose `task ci` is
 documented as running what CI blocks on cannot keep that claim once one gate
 moves into a shared action, so the desc has to say which gate it no longer runs.
 
-## The merge order and the editorconfig gate deadlock each other
+## Two pre-existing failures inside one gate job
 
-The estate's ruling is that a gate failing on an advisory a pull request did not
-introduce is the gate working, and the bump lands in its own pull request cut
-from main, merged first, after which the branch takes main. The `fast-uri` /
-`qs` bump follows it and is cut from main.
-
-Its only failing check is not the bump. It is the `Editorconfig` step in
-`build + lint + typecheck + test`:
+`build + lint + typecheck + test` runs `npm audit` at step 4 and the
+editorconfig check at step 7. Main fails both, for reasons that share nothing
+but the job:
 
 ```
-> editorconfig-checker -disable-indent-size -disable-indentation
-Failed to download binary:
-Error: The binary 'ec-linux-amd64*' not found
+step 4  fast-uri 3.0.0 - 3.1.5   high      (four advisories)
+        qs       2.2.5 - 6.15.3  moderate  (two advisories)
+
+step 7  editorconfig-checker: Failed to download binary
+        Error: The binary 'ec-linux-amd64*' not found
 ```
 
-That is one of the three failure modes the shared editorconfig gate exists to
-remove, on a tree with no formatting defect. `merge gate` fails only because it
-needs that job.
+The consequence is not an ordering preference. A branch fixing only the
+advisories clears step 4 and fails step 7. A branch fixing only the download
+never reaches step 7 — step 4 fails first and the remaining steps are skipped,
+so the check it repairs is not even executed. The job is inside a required merge
+gate, so no branch cut from main can merge unless it fixes both, and neither
+branch can go green by doing more of its own argument.
 
-The deadlock is in the order. The bump has to merge before the freshness branch
-takes main, and it cannot go green while main still runs the npm shim — and the
-adoption that removes the shim is a commit on the freshness branch, which by the
-same order merges second. Neither can be first.
+Cutting the editorconfig adoption into its own pull request from main was tried
+and moved the deadlock rather than breaking it: that branch inherited the
+advisories exactly as the advisory branch inherited the download. Its CI run is
+the evidence — step 4 failed, step 7 skipped.
 
-Whichever way it is broken, the fix is not to fold anything together:
+Both fixes therefore ship in one branch. That is not an exception to the rule
+that a branch fixes one thing; the rule is about reviewability, and a message
+that states the coupling and separates the two arguments still gives a reader
+one at a time. What the rule cannot do is forbid landing either fix, which is
+what keeping them apart amounts to when a single job holds both verdicts.
 
-- Cut the editorconfig adoption out of the freshness branch into its own pull
-  request from main and merge that first. It is a fix for a defect neither of
-  the other two introduced, which is the same shape the ruling already
-  prescribes for the bump, so this is the ruling applied one level up rather
-  than an exception to it. The bump then reruns green, and the freshness branch
-  keeps only what it argues.
-- Or merge the bump with the editorconfig check knowingly red, which trades a
-  legible order for an override and leaves the next pull request meeting the
-  same wall.
+The alternative — merging one of them with its gate knowingly red — was
+available and is worse. An override is a decision whoever hits it next has to
+make again, with nothing recording that it was already made, and here it would
+also have merged a gate nobody had yet seen pass.
 
-The first is the one that leaves nothing owed. Naming it here rather than acting
-on it: the branch this file sits on is not the place to reorganise which branch
-carries what.
+What generalises: a required job that runs several independent checks in
+sequence makes those checks one verdict, and any pre-existing failure in it
+blocks every branch until every one of them is fixed. The first failing step
+also hides the rest, so the cost is discovered one cut at a time. Splitting the
+job, or running its steps so a later one still reports when an earlier one
+fails, would make each defect land in its own change again.
 
 ## What the reference implementation does not cover
 
