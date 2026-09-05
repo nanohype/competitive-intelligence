@@ -482,9 +482,10 @@ function modelGrantCovers(allowed, invoked) {
  * The gateway runs under the tenant ServiceAccount, so it invokes Bedrock as
  * the tenant and the operator's explicit Deny over NotResource applies to it. A
  * model a route names and the CR omits is not a soft failure — it is
- * AccessDenied on every call, in a deployment whose CI is green. The pairing is
- * invisible to the CRD schema (both sides are free-form strings), so this is the
- * only place the two can be held together.
+ * AccessDenied on every call, in a deployment whose CI is green. Neither CRD
+ * references the other — the Platform's `allowedModels` bounds the SHAPE of an
+ * entry and the ModelGateway's `modelId` is unconstrained — so no schema can
+ * hold the pair together and this is the only place it is held.
  *
  * Both `modelId` and `crossRegionProfile` are checked: a bare `allowedModels`
  * entry implies the `us.` profile and nothing else, so a route moved to `eu.`
