@@ -22,7 +22,7 @@ jobs:
     name: gitleaks (secret scan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       # The official gitleaks-action gates organization repos behind a paid
@@ -36,7 +36,7 @@ jobs:
     name: trivy (dockerfile misconfig)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Report step: ALWAYS produce + upload a clean SARIF (exit-code 0) so
       # code scanning records a SUCCESSFUL analysis. Coupling the SARIF run with
       # the build gate (exit-code 1) makes Trivy mark the SARIF invocation
@@ -59,7 +59,7 @@ jobs:
           exit-code: '0'
           format: sarif
           output: trivy-config.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
         if: always()
         with:
           sarif_file: trivy-config.sarif
@@ -90,7 +90,7 @@ jobs:
       # input for it; the flag is only reachable as its TRIVY_-prefixed env var.
       TRIVY_INCLUDE_DEV_DEPS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Report step: always upload a clean SARIF (exit-code 0) — see trivy-config.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -107,7 +107,7 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
           skip-dirs: 'node_modules'
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
         if: always()
         with:
           sarif_file: trivy-fs.sarif
