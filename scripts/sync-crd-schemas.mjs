@@ -731,7 +731,15 @@ async function runSelfTest(manifest) {
         inBody.length > 0 && inBody.every((c) => c === "npm run schemas:sync -- --ref=latest"),
         inBody.join(" | ") || "the workflow names no re-vendor command",
       );
-      const bodyShas = workflow.match(/\b[0-9a-fA-F]{7,40}\b/g) ?? [];
+      // Only the issue body is checked for commit ids: the same file pins its
+      // actions to commit digests, and those are not what a reader acts on.
+      const body = workflow.match(/body=\$\(cat <<EOF\n([\s\S]*?)\n\s*EOF\n/)?.[1];
+      record(
+        "the issue body is where this expects it",
+        body !== undefined,
+        "no `body=$(cat <<EOF ... EOF` heredoc, so the check below would verify nothing",
+      );
+      const bodyShas = body?.match(/\b[0-9a-fA-F]{7,40}\b/g) ?? [];
       record("the issue body names no commit id", bodyShas.length === 0, bodyShas.join(", "));
     }
 
