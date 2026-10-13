@@ -18,9 +18,9 @@ jobs:
     name: build + lint + typecheck + test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -90,9 +90,9 @@ jobs:
     # `echo`, which exits 0 and regenerates nothing — a phase that cannot fail
     # is not a phase, and nothing here invoked it anyway.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -108,11 +108,11 @@ jobs:
     name: Helm Lint + Template
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
-          version: v3.16.0
+          version: v3.22.0
 
       - name: Helm lint chart
         run: helm lint chart
@@ -186,9 +186,9 @@ jobs:
     name: Platform Manifest Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -211,7 +211,7 @@ jobs:
     name: CRD schema drift check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # The digests in schemas/crd/source.json prove the vendored copies were
       # not edited in place. They cannot prove the pin still describes them: a
@@ -227,13 +227,13 @@ jobs:
           echo "ref=$(jq -r .upstream.ref schemas/crd/source.json)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout eks-agent-platform at the pinned ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ steps.pin.outputs.repo }}
           ref: ${{ steps.pin.outputs.ref }}
           path: .eks-agent-platform
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
@@ -267,14 +267,14 @@ jobs:
     name: docker build (no push)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: docker build -t competitive-intelligence:ci .
 
   vendor-drift:
     name: vendored copy drift check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Every vendored surface (src/vendor/runtime modules, biome.base.json,
       # the tenant-chart-base chart, and the sync script itself) is a
@@ -295,13 +295,13 @@ jobs:
       # has fallen behind is asked by the scheduled vendored-freshness
       # workflow, off the blocking path.
       - name: Checkout nanohype at the pinned ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ steps.pin.outputs.repo }}
           ref: ${{ steps.pin.outputs.ref }}
           path: .nanohype
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
