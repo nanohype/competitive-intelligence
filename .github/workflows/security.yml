@@ -59,7 +59,7 @@ jobs:
           exit-code: '0'
           format: sarif
           output: trivy-config.sarif
-      - uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+      - uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3
         if: always()
         with:
           sarif_file: trivy-config.sarif
@@ -107,7 +107,7 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
           skip-dirs: 'node_modules'
-      - uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+      - uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3
         if: always()
         with:
           sarif_file: trivy-fs.sarif
@@ -145,7 +145,7 @@ jobs:
     # merges come from pull requests; on push it is skipped and gates nothing.
     if: always() && github.event_name == 'pull_request'
     steps:
-      - uses: nanohype/.github/actions/merge-gate@6ec6c5b3e6c4a8b15e12da4afd7ac4870a630092 # main
+      - uses: nanohype/.github/actions/merge-gate@dc3d13a9b1dbdec20da8599f66068556059c8aa7 # main
         with:
           needs: ${{ toJSON(needs) }}
           gate-job-id: merge-gate-security
