@@ -49,10 +49,18 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
             ${{ env.IMAGE }}:latest
-      # The cluster verify-images policy admits only images signed by this
-      # repository's release.yml on a tag, and it verifies the digest a
-      # pod resolves to, so the signature, the SBOM and its attestation all
-      # bind to the pushed digest, never to a mutable tag.
+      # The cluster verify-images policy (eks-gitops
+      # policies/kyverno/supply-chain/base/verify-images.yaml) requires every
+      # ghcr.io/nanohype/* pod image to carry a keyless signature and an SPDX
+      # SBOM attestation whose GitHub Actions OIDC subject is the release.yml
+      # or release.yaml workflow of a nanohype repository, running on a tag.
+      # Staging and production deny a failing image at admission. The
+      # subject match accepts the release workflow of any nanohype repository,
+      # so it does not tie this image to this repository. It does tie it to
+      # this file's name and trigger: renaming the file or signing from a
+      # branch fails verification. The policy pins each pod image to a digest
+      # before verifying, so the signature and the attestation bind to the
+      # digest this build pushed, never to a mutable tag.
       - name: sign (keyless, OIDC)
         env:
           IMAGE_REF: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
