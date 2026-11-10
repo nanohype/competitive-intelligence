@@ -12,7 +12,7 @@
 | Tool     | Version                           |
 | -------- | --------------------------------- |
 | `node`   | see `package.json` engines (≥ 24) |
-| `npm`    | bundled with Node 24              |
+| `npm`    | bundled with Node 26              |
 | `helm`   | matches the target cluster minor  |
 | `task`   | latest                            |
 | `docker` | for the container build job       |
