@@ -164,7 +164,7 @@
   <!-- ─── Tech Stack ─── -->
   <rect class="card" x="640" y="410" width="530" height="60" rx="12"/>
   <text class="sec" x="660" y="432">TECH STACK</text>
-  <text class="sub" x="660" y="448">TypeScript · ESM · Node ≥ 24 · Zod · cheerio · pgvector · MCP SDK</text>
+  <text class="sub" x="660" y="448">TypeScript · ESM · Node ≥ 26 · Zod · cheerio · pgvector · MCP SDK</text>
   <text class="sub" x="660" y="462">provider registry · sliding-window circuit breakers · cosine similarity</text>
 
   <!-- ─── Footer ─── -->

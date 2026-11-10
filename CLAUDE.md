@@ -102,7 +102,7 @@ The gateway needs Bedrock model access to Claude Sonnet and Titan Embed v2 in th
 ## Conventions
 
 - TypeScript, ESM (`"type": "module"`, `.js` extensions in imports)
-- Node ≥ 24
+- Node ≥ 26
 - Zod for all validation (config, sources, log level)
 - Structured JSON logging to stderr (`src/logger.ts`) — stdout reserved for CLI display; OTel `trace_id`/`span_id` correlated
 - Provider registry pattern: `createRegistry<T>(kind)` returns typed `{ register, get, has, names }` — vendored from `@nanohype/runtime`

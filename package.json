@@ -4,7 +4,7 @@
   "description": "Competitive intelligence radar — detect signals before they become headlines",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -49,7 +49,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
-    "@types/node": "^24.12.2",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.11.0",
     "@vitest/coverage-v8": "^4.1.4",
     "tsx": "^4.21.0",
