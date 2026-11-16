@@ -42,7 +42,7 @@
     "@opentelemetry/auto-instrumentations-node": "^0.83.0",
     "@slack/web-api": "^8.0.0",
     "cheerio": "^1.2.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.0",
     "jose": "^6.2.3",
     "pg": "^8.13.0",
     "zod": "^4.3.6"
